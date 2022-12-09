@@ -1,7 +1,7 @@
 {
     "name": "xqkeji/composer",
     "description": "新齐科技中心相关程序的compser工具。",
-    "type": "library",
+    "type": "composer-plugin",
     "license": "SSPL-1.0",
     "autoload": {
         "psr-4": {
@@ -12,5 +12,8 @@
         {
             "name": "xqkeji.cn"
         }
-    ]
+    ],
+    "require": {
+        "composer-plugin-api": "^2.3"
+    }
 }

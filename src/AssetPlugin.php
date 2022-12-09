@@ -1,15 +1,41 @@
 <?php
 namespace xqkeji\composer;
-define('XQ_COMPOSER_ROOT_DIR',dirname(dirname(dirname(dirname(__DIR__)))));
 
-require XQ_COMPOSER_ROOT_DIR.'/vendor/composer/autoload_classmap.php';
+use Composer\Composer;
+use Composer\EventDispatcher\EventSubscriberInterface;
+use Composer\IO\IOInterface;
+use Composer\Plugin\PluginInterface;
+use Composer\Plugin\PluginEvents;
+use Composer\Script\ScriptEvents;
 
-use Composer\Script\Event;
+class AssetPlugin implements PluginInterface, EventSubscriberInterface
+{
+    protected $composer;
+    protected $io;
 
-class Asset{
+    public function activate(Composer $composer, IOInterface $io)
+    {
+        $this->composer = $composer;
+        $this->io = $io;
+        
+    }
+
+    public static function getSubscribedEvents()
+    {
+        return array(
+            ScriptEvents::POST_INSTALL_CMD => array(
+                array('excute', 0)
+            ),
+        );
+    }
+
     public static function excute(Event $event){
+        $t=$this->composer;
+        var_export($t);
         $name=$event->getName();
         $composer=$event->getComposer();
+        var_export($composer);
+        exit;
         $cmds=$composer->getConfig()->get('xq-cmds');
         if(!empty($cmds))
         {

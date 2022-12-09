@@ -1,0 +1,16 @@
+{
+    "name": "xqkeji/composer",
+    "description": "新齐科技中心相关程序的compser工具。",
+    "type": "library",
+    "license": "SSPL-1.0",
+    "autoload": {
+        "psr-4": {
+            "xqkeji\\composer\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "xqkeji.cn"
+        }
+    ]
+}

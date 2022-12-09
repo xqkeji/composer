@@ -1,7 +1,7 @@
 <?php
 namespace xqkeji\composer;
+define('XQ_COMPOSER_ROOT_DIR',dirname(dirname(dirname(dirname(__DIR__)))));
 
-define('XQ_COMPOSER_ROOT_DIR',realpath('../../../'));
 require XQ_COMPOSER_ROOT_DIR.'/vendor/composer/autoload_classmap.php';
 
 use Composer\Script\Event;

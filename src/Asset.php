@@ -9,24 +9,32 @@ use Composer\Script\Event;
 class Asset{
     public static function excute(Event $event){
         $name=$event->getName();
-        $extra = $event->getComposer()->getPackage()->getExtra();
-        if(isset($extra[$name]))
+        $composer=$event->getComposer();
+        $cmds=$composer->getConfig()->get('xq-cmds');
+        if(!empty($cmds))
         {
-            $data=$extra[$name];
-            foreach($data as $excute){
-                $cmd=$excute['cmd'];
-                $param=$excute['param'];
-                $data=[];
-                if(!empty($param))
-                {
-                    foreach($param as $val)
+            if(isset($cmds[$name]))
+            {
+                $data=$cmds[$name];
+                foreach($data as $excute){
+                    if(isset($excute['cmd']))
                     {
-                        $data[]=XQ_COMPOSER_ROOT_DIR.DIRECTORY_SEPARATOR.$val;
+                        $cmd=$excute['cmd'];
+                        $param=isset($excute['param'])?$excute['param']:null;
+                        $params=[];
+                        if(!empty($param))
+                        {
+                            foreach($param as $val)
+                            {
+                                $params[]=XQ_COMPOSER_ROOT_DIR.DIRECTORY_SEPARATOR.$val;
+                            }
+                        }
+                        call_user_func_array([get_called_class(),$cmd],$params);
                     }
                 }
-                call_user_func_array([get_called_class(),$cmd],$data);
             }
         }
+        
     }
     public static function createDir($path, $mode = 0775, $recursive = true)
     {

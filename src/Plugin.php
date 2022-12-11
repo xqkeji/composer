@@ -64,7 +64,17 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         self::$packages=$event->getInput()->getArgument('packages');
     }
     public static function executePackage(PackageEvent $event){
-        $package=$event->getOperation()->getPackage();
+        $operation=$event->getOperation();
+        $type=$operation->getType();
+        if($type=='update')
+        {
+            $package=$operation->getTargetPackage();
+        }
+        else
+        {
+            $package=$operation->getPackage();
+        }
+        
         $packageName = $package->getName();
         $path=CP_XQ_VENDOR_DIR.CP_XQ_DS.str_replace('/',CP_XQ_DS,$packageName);
         $name=basename($path);

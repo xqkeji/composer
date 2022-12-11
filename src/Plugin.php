@@ -96,7 +96,14 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                         {
                             foreach($param as $val)
                             {
-                                $params[]=self::ROOT_DIR.self::DS.$val;
+                                if(strpos($val,'/')!==false)
+                                {
+                                    $params[]=self::ROOT_DIR.self::DS.$val;
+                                }
+                                else
+                                {
+                                    $params[]=$val;
+                                }
                             }
                         }
                         call_user_func_array($cmd,$params);

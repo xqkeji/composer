@@ -1,16 +1,17 @@
 <?php
 namespace xqkeji\composer;
-if(!defined('_XQ_ROOT_DIR'))
+if(!defined('CP_XQ_ROOT_DIR'))
 {
-    define('_XQ_ROOT_DIR',dirname(__DIR__,4));
+    define('CP_XQ_ROOT_DIR',dirname(__DIR__,4));
+    define('CP_XQ_DS',DIRECTORY_SEPARATOR);
+    define('CP_XQ_RUNTIME_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'runtime');
+    define('CP_XQ_VENDOR_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'vendor');
 }
 class App
 {
-    const ROOT_DIR = _XQ_ROOT_DIR;
-    const DS = DIRECTORY_SEPARATOR;
     public static function addModule($name,$path)
     {
-        $configFile=self::ROOT_DIR.self::DS.'config'.self::DS.'composer.php';
+        $configFile=CP_XQ_ROOT_DIR.CP_XQ_DS.'config'.CP_XQ_DS.'composer.php';
         if(is_file($configFile))
         {
             $config=include($configFile);
@@ -20,16 +21,16 @@ class App
             $config=[];
         }
         $config[$name]=$path;
-        file_put_contents($configFile,'<?php\n return '.var_export($config,true));
+        file_put_contents($configFile,"<?php\r\n return ".var_export($config,true).';');
     }
     public static function removeModule($name)
     {
-        $configFile=self::ROOT_DIR.self::DS.'config'.self::DS.'composer.php';
+        $configFile=CP_XQ_ROOT_DIR.CP_XQ_DS.'config'.CP_XQ_DS.'composer.php';
         if(is_file($configFile))
         {
             $config=include($configFile);
             unset($config[$name]);
-            file_put_contents($configFile,'<?php\n return '.var_export($config,true));
+            file_put_contents($configFile,"<?php\r\n return ".var_export($config,true).';');
         }
     }
 }

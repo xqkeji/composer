@@ -11,9 +11,12 @@ use Composer\Plugin\CommandEvent;
 use Composer\Script\Event;
 use Composer\Installer\PackageEvents;
 use  Composer\Installer\PackageEvent;
-if(!defined('_XQ_ROOT_DIR'))
+if(!defined('CP_XQ_ROOT_DIR'))
 {
-    define('_XQ_ROOT_DIR',dirname(__DIR__,4));
+    define('CP_XQ_ROOT_DIR',dirname(__DIR__,4));
+    define('CP_XQ_DS',DIRECTORY_SEPARATOR);
+    define('CP_XQ_RUNTIME_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'runtime');
+    define('CP_XQ_VENDOR_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'vendor');
 }
 
 
@@ -24,11 +27,6 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     protected static $name=null;
     protected static $packages=null;
     protected static $commandName=null;
-    
-    const ROOT_DIR = _XQ_ROOT_DIR;
-    const DS = DIRECTORY_SEPARATOR;
-    const RUNTIME_DIR = self::ROOT_DIR.self::DS.'runtime';
-    const VENDOR_DIR = self::ROOT_DIR.self::DS.'vendor';
 
     public function activate(Composer $composer, IOInterface $io)
     {
@@ -68,7 +66,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     public static function executePackage(PackageEvent $event){
         $package=$event->getOperation()->getPackage();
         $packageName = $package->getName();
-        $path=self::VENDOR_DIR.self::DS.str_replace($packageName,'/',self::DS);
+        $path=CP_XQ_VENDOR_DIR.CP_XQ_DS.str_replace('/',CP_XQ_DS,$packageName);
         $name=basename($path);
         if(str_starts_with($name,'xq-app-'))
         {
@@ -98,7 +96,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                             {
                                 if(strpos($val,'/')!==false)
                                 {
-                                    $params[]=self::ROOT_DIR.self::DS.$val;
+                                    $params[]=CP_XQ_ROOT_DIR.CP_XQ_DS.str_replace('/',CP_XQ_DS,$val);
                                 }
                                 else
                                 {

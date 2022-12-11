@@ -65,7 +65,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     }
     public static function executePackage(PackageEvent $event){
         $operation=$event->getOperation();
-        $type=$operation->getType();
+        $type=$operation->getOperationType();
         if($type=='update')
         {
             $package=$operation->getTargetPackage();

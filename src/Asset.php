@@ -1,73 +1,8 @@
 <?php
 namespace xqkeji\composer;
 
-use Composer\Composer;
-use Composer\EventDispatcher\EventSubscriberInterface;
-use Composer\IO\IOInterface;
-use Composer\Plugin\PluginInterface;
-use Composer\Plugin\PluginEvents;
-use Composer\Script\ScriptEvents;
-
-class AssetPlugin implements PluginInterface, EventSubscriberInterface
+class Asset
 {
-    protected $composer;
-    protected $io;
-
-    public function activate(Composer $composer, IOInterface $io)
-    {
-        $this->composer = $composer;
-        $this->io = $io;
-        
-    }
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-        
-    }
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-    }
-    public static function getSubscribedEvents()
-    {
-        return array(
-            ScriptEvents::POST_INSTALL_CMD => array(
-                array('excute', 0)
-            ),
-        );
-    }
-
-    public static function excute(Event $event){
-        $t=$this->composer;
-        var_export($t);
-        $name=$event->getName();
-        $composer=$event->getComposer();
-        var_export($composer);
-        exit;
-        $cmds=$composer->getConfig()->get('xq-cmds');
-        if(!empty($cmds))
-        {
-            if(isset($cmds[$name]))
-            {
-                $data=$cmds[$name];
-                foreach($data as $excute){
-                    if(isset($excute['cmd']))
-                    {
-                        $cmd=$excute['cmd'];
-                        $param=isset($excute['param'])?$excute['param']:null;
-                        $params=[];
-                        if(!empty($param))
-                        {
-                            foreach($param as $val)
-                            {
-                                $params[]=XQ_COMPOSER_ROOT_DIR.DIRECTORY_SEPARATOR.$val;
-                            }
-                        }
-                        call_user_func_array([get_called_class(),$cmd],$params);
-                    }
-                }
-            }
-        }
-        
-    }
     public static function createDir($path, $mode = 0775, $recursive = true)
     {
         if (is_dir($path)) {

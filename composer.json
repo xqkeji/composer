@@ -17,6 +17,6 @@
         "composer-plugin-api": "^2.3"
     },
     "extra": {
-        "class": "xqkeji\\composer\\AssetPlugin"
+        "class": "xqkeji\\composer\\Plugin"
     }
 }

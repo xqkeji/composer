@@ -106,14 +106,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                         {
                             foreach($param as $val)
                             {
-                                if(strpos($val,'/')!==false)
-                                {
-                                    $params[]=self::getRootPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$val);
-                                }
-                                else
-                                {
-                                    $params[]=$val;
-                                }
+                                $params[]=self::processParams($val);
                             }
                         }
                         call_user_func_array($cmd,$params);
@@ -122,6 +115,59 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             }
             
         }
+    }
+    public static function processParams(mixed $data) : mixed
+    {
+        if(is_string($data))
+        {
+            if(strpos($data,'/')!==false)
+            {
+                $data=self::getRootPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$data);
+            }
+        }
+        elseif(is_array($data))
+        {
+            if(!empty($data))
+            {
+                $arr=[];
+                foreach($data as $key=>$val)
+                {
+                    if(is_string($key))
+                    {
+                        if(strpos($key,'/')!==false)
+                        {
+                            $new_key=self::getRootPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$key);
+                        }
+                        else
+                        {
+                            $new_key=$key;
+                        }
+                    }
+                    else
+                    {
+                        $new_key=$key;
+                    }
+                    if(is_string($val))
+                    {
+                        if(strpos($val,'/')!==false)
+                        {
+                            $new_val=self::getRootPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$val);
+                        }
+                        else
+                        {
+                            $new_val=$val;
+                        }
+                    }
+                    else
+                    {
+                        $new_val=$val;
+                    }
+                    $arr[$new_key]=$new_val;
+                }
+                $data=$arr;
+            }
+        }
+        return $data;
     }
     public static function processModule(string $moduleName,string $path,string $type)
     {

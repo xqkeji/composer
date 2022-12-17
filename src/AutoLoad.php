@@ -6,46 +6,75 @@ class AutoLoad
     use PathTrait;
     public static function addLoad(array $autoload)
     {
-        $rootPath=self::getRootPath();
-        $configFile=$rootPath.DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'loader.php';
-        $data=include($configFile);
-        if(isset($autoload['psr-4']))
+        $configPath=self::getRootConfigPath();
+        $configFile=$configPath.DIRECTORY_SEPARATOR.'loader.php';
+        if(is_dir($configPath))
         {
-            self::processAdd($data,$autoload,'psr-4');
+            if(is_file($configFile))
+            {
+                $data=include($configFile);
+            }
+            else
+            {
+                $data=[];
+            }
+            
+            if(isset($autoload['psr-4']))
+            {
+                self::processAdd($data,$autoload,'psr-4');
+            }
+            elseif(isset($autoload['psr-0']))
+            {
+                self::processAdd($data,$autoload,'psr-0');
+            }
         }
-        elseif(isset($autoload['psr-0']))
-        {
-            self::processAdd($data,$autoload,'psr-0');
-        }
+        
     }
     public static function removeLoad(array $autoload)
     {
-        $rootPath=self::getRootPath();
-        $configFile=$rootPath.DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'loader.php';
-        $data=include($configFile);
-        if(isset($autoload['psr-4']))
+        $configPath=self::getRootConfigPath();
+        $configFile=$configPath.DIRECTORY_SEPARATOR.'loader.php';
+        if(is_dir($configPath))
         {
-            self::processRemove($data,$autoload,'psr-4');
-        }
-        elseif(isset($autoload['psr-0']))
-        {
-            self::processRemove($data,$autoload,'psr-0');
+            if(is_file($configFile))
+            {
+                $data=include($configFile);
+                if(isset($autoload['psr-4']))
+                {
+                    self::processRemove($data,$autoload,'psr-4');
+                }
+                elseif(isset($autoload['psr-0']))
+                {
+                    self::processRemove($data,$autoload,'psr-0');
+                }
+            }
         }
     }
     public static function updateLoad(array $autoload)
     {
-        $rootPath=self::getRootPath();
-        $configFile=$rootPath.DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'loader.php';
-        $data=include($configFile);
-        if(isset($autoload['psr-4']))
+        $configPath=self::getRootConfigPath();
+        $configFile=$configPath.DIRECTORY_SEPARATOR.'loader.php';
+        if(is_dir($configPath))
         {
-            self::processRemove($data,$autoload,'psr-4');
-            self::processAdd($data,$autoload,'psr-4');
-        }
-        elseif(isset($autoload['psr-0']))
-        {
-            self::processRemove($data,$autoload,'psr-0');
-            self::processAdd($data,$autoload,'psr-0');
+            if(is_file($configFile))
+            {
+                $data=include($configFile);
+            }
+            else
+            {
+                $data=[];
+            }
+
+            if(isset($autoload['psr-4']))
+            {
+                self::processRemove($data,$autoload,'psr-4');
+                self::processAdd($data,$autoload,'psr-4');
+            }
+            elseif(isset($autoload['psr-0']))
+            {
+                self::processRemove($data,$autoload,'psr-0');
+                self::processAdd($data,$autoload,'psr-0');
+            }
         }
     }
     private static function processAdd(array $data,array $autoload,string $type) : void

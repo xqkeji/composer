@@ -6,6 +6,10 @@ trait PathTrait{
     {
         return dirname(__DIR__,4);
     }
+    public static function getRootConfigPath() : string
+    {
+        return dirname(__DIR__,4).DIRECTORY_SEPARATOR.'config';
+    }
     public static function getDs() : string
     {
         return DIRECTORY_SEPARATOR;

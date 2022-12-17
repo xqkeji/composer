@@ -27,7 +27,27 @@ class Asset
             throw new \Exception("Failed to change permissions for directory \"$path\": " . $e->getMessage(), $e->getCode());
         }
     }
-    public static function copyDir($src, $dst)
+    public static function copyDirs(array $paths) : void
+    {
+        if(!empty($paths))
+        {
+            foreach($paths as $src=>$dst)
+            {
+                self::copyDir($src,$dst);
+            }
+        }
+    }
+    public static function rmDirs(array $paths) : void
+    {
+        if(!empty($paths))
+        {
+            foreach($paths as $dst)
+            {
+                self::rmDir($dst);
+            }
+        }
+    }
+    public static function copyDir(string $src,string $dst) : void
     {
         $dstExists = is_dir($dst);
         if (!$dstExists) {
@@ -54,7 +74,7 @@ class Asset
         }
         closedir($handle);
     }
-    public static function rmDir($dir)
+    public static function rmDir(string $dir)
     {
         if (!is_dir($dir)) {
             return;
@@ -80,7 +100,7 @@ class Asset
             rmdir($dir);
         }
     }
-    public static function unlink($path)
+    public static function unlink(string $path)
     {
         $isWindows = DIRECTORY_SEPARATOR === '\\';
 

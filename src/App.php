@@ -6,18 +6,21 @@ class App
     use PathTrait;
     public static function addModule($name,$path) : void
     {
-        $configFile=self::getRootPath().DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'composer.php';
-        if(is_file($configFile))
+        $configPath=self::getRootConfigPath();
+        $configFile=$configPath.DIRECTORY_SEPARATOR.'composer.php';
+        if(is_dir($configPath))
         {
-            $config=include($configFile);
+            if(is_file($configFile))
+            {
+                $config=include($configFile);
+            }
+            else
+            {
+                $config=[];
+            }
+            $config[$name]=$path;
+            self::filePutContents($configFile,$config);
         }
-        else
-        {
-            $config=[];
-        }
-        $config[$name]=$path;
-        self::filePutContents($configFile,$config);
-        
     }
     public static function updateModule($name,$path) : void
     {
@@ -25,7 +28,8 @@ class App
     }
     public static function removeModule($name,$path) : void
     {
-        $configFile=self::getRootPath().DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'composer.php';
+        $configPath=self::getRootConfigPath();
+        $configFile=$configPath.DIRECTORY_SEPARATOR.'composer.php';
         if(is_file($configFile))
         {
             $config=include($configFile);

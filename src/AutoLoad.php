@@ -21,11 +21,11 @@ class AutoLoad
             
             if(isset($autoload['psr-4']))
             {
-                self::processAdd($data,$autoload,'psr-4');
+                self::processAdd($configFile,$data,$autoload,'psr-4');
             }
             elseif(isset($autoload['psr-0']))
             {
-                self::processAdd($data,$autoload,'psr-0');
+                self::processAdd($configFile,$data,$autoload,'psr-0');
             }
         }
         
@@ -41,11 +41,11 @@ class AutoLoad
                 $data=include($configFile);
                 if(isset($autoload['psr-4']))
                 {
-                    self::processRemove($data,$autoload,'psr-4');
+                    self::processRemove($configFile,$data,$autoload,'psr-4');
                 }
                 elseif(isset($autoload['psr-0']))
                 {
-                    self::processRemove($data,$autoload,'psr-0');
+                    self::processRemove($configFile,$data,$autoload,'psr-0');
                 }
             }
         }
@@ -67,17 +67,17 @@ class AutoLoad
 
             if(isset($autoload['psr-4']))
             {
-                self::processRemove($data,$autoload,'psr-4');
-                self::processAdd($data,$autoload,'psr-4');
+                self::processRemove($configFile,$data,$autoload,'psr-4');
+                self::processAdd($configFile,$data,$autoload,'psr-4');
             }
             elseif(isset($autoload['psr-0']))
             {
-                self::processRemove($data,$autoload,'psr-0');
-                self::processAdd($data,$autoload,'psr-0');
+                self::processRemove($configFile,$data,$autoload,'psr-0');
+                self::processAdd($configFile,$data,$autoload,'psr-0');
             }
         }
     }
-    private static function processAdd(array $data,array $autoload,string $type) : void
+    private static function processAdd(string $configFile,array $data,array $autoload,string $type) : void
     {
         $psr=$autoload[$type];//composer包里自动加载的配置数据
         if(isset($data[$type]))
@@ -136,7 +136,7 @@ class AutoLoad
         $data[$type]=$psrData;
         self::filePutContents($configFile,$data);
     }
-    private static function processRemove(array $data,array $autoload,string $type) : void
+    private static function processRemove(string $configFile,array $data,array $autoload,string $type) : void
     {
         $psr=$autoload[$type];//composer包里自动加载的配置数据
         if(isset($data[$type]))

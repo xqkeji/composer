@@ -10,18 +10,15 @@ use Composer\Script\ScriptEvents;
 use Composer\Plugin\CommandEvent;
 use Composer\Script\Event;
 use Composer\Installer\PackageEvents;
-use  Composer\Installer\PackageEvent;
-if(!defined('CP_XQ_ROOT_DIR'))
-{
-    define('CP_XQ_ROOT_DIR',dirname(__DIR__,4));
-    define('CP_XQ_DS',DIRECTORY_SEPARATOR);
-    define('CP_XQ_RUNTIME_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'runtime');
-    define('CP_XQ_VENDOR_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'vendor');
-}
+use Composer\Installer\PackageEvent;
 
+use xqkeji\composer\AutoLoad;
+use xqkeji\composer\App;
+use xqkeji\composer\Asset;
 
 class Plugin implements PluginInterface, EventSubscriberInterface 
 {
+    use PathTrait;
     protected $composer;
     protected $io;
     protected static $name=null;
@@ -64,6 +61,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         self::$packages=$event->getInput()->getArgument('packages');
     }
     public static function executePackage(PackageEvent $event){
+        $eventName=$event->getName();
         $operation=$event->getOperation();
         $type=$operation->getOperationType();
         if($type=='update')
@@ -76,14 +74,18 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         }
         
         $packageName = $package->getName();
-        $path=CP_XQ_VENDOR_DIR.CP_XQ_DS.str_replace('/',CP_XQ_DS,$packageName);
+        $path=self::getVendorPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$packageName);
         $name=basename($path);
         if(str_starts_with($name,'xq-app-'))
         {
+            $moduleName=str_replace('xq-app-','',$name);
+            $ns='xqkeji\\app\\'.$moduleName;
+            self::processModule($ns,$path.DIRECTORY_SEPARATOR.'src');
             $extra=$package->getExtra();
-            self::execute($extra,PackageEvents::POST_PACKAGE_INSTALL);
+            self::execute($extra,$eventName);
         }
-        
+        $autoload=$package->getAutoload();
+        self::processAutoLoad($autoload,$type);
     }
     
     public static function execute(array $extra,string $scriptName)
@@ -106,7 +108,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                             {
                                 if(strpos($val,'/')!==false)
                                 {
-                                    $params[]=CP_XQ_ROOT_DIR.CP_XQ_DS.str_replace('/',CP_XQ_DS,$val);
+                                    $params[]=self::getRootPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$val);
                                 }
                                 else
                                 {
@@ -119,6 +121,37 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                 }
             }
             
+        }
+    }
+    public static function processModule(string $moduleName,string $path)
+    {
+        if($type=='install')
+        {
+            App::addModule($moduleName,$path);
+        }
+        elseif($type=='uninstall')
+        {
+            App::removeModule($moduleName,$path);
+        }
+        elseif($type=='update')
+        {
+            App::updateModule($moduleName,$path);
+        }
+
+    }
+    public static function processAutoLoad(array $autoload,string $type)
+    {
+        if($type=='install')
+        {
+            AutoLoad::addLoad($autoload,$type);
+        }
+        elseif($type=='uninstall')
+        {
+            AutoLoad::removeLoad($autoload,$type);
+        }
+        elseif($type=='update')
+        {
+            AutoLoad::updateLoad($autoload,$type);
         }
 
     }

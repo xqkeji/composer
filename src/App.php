@@ -1,17 +1,12 @@
 <?php
 namespace xqkeji\composer;
-if(!defined('CP_XQ_ROOT_DIR'))
-{
-    define('CP_XQ_ROOT_DIR',dirname(__DIR__,4));
-    define('CP_XQ_DS',DIRECTORY_SEPARATOR);
-    define('CP_XQ_RUNTIME_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'runtime');
-    define('CP_XQ_VENDOR_DIR',CP_XQ_ROOT_DIR.CP_XQ_DS.'vendor');
-}
+
 class App
 {
-    public static function addModule($name,$path)
+    use PathTrait;
+    public static function addModule($name,$path) : void
     {
-        $configFile=CP_XQ_ROOT_DIR.CP_XQ_DS.'config'.CP_XQ_DS.'composer.php';
+        $configFile=self::getRootPath().DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'composer.php';
         if(is_file($configFile))
         {
             $config=include($configFile);
@@ -21,16 +16,24 @@ class App
             $config=[];
         }
         $config[$name]=$path;
-        file_put_contents($configFile,"<?php\r\n return ".var_export($config,true).';');
+        self::filePutContents($configFile,$config);
+        
     }
-    public static function removeModule($name)
+    public static function updateModule($name,$path) : void
     {
-        $configFile=CP_XQ_ROOT_DIR.CP_XQ_DS.'config'.CP_XQ_DS.'composer.php';
+        self::addModule($name,$path);
+    }
+    public static function removeModule($name,$path) : void
+    {
+        $configFile=self::getRootPath().DIRECTORY_SEPARATOR.'config'.DIRECTORY_SEPARATOR.'composer.php';
         if(is_file($configFile))
         {
             $config=include($configFile);
-            unset($config[$name]);
-            file_put_contents($configFile,"<?php\r\n return ".var_export($config,true).';');
+            if(isset($config[$name]))
+            {
+                unset($config[$name]);
+                self::filePutContents($configFile,$config);
+            }
         }
     }
 }

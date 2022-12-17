@@ -80,7 +80,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         {
             $moduleName=str_replace('xq-app-','',$name);
             $ns='xqkeji\\app\\'.$moduleName;
-            self::processModule($ns,$path.DIRECTORY_SEPARATOR.'src');
+            self::processModule($ns,$path.DIRECTORY_SEPARATOR.'src',$type);
             $extra=$package->getExtra();
             self::execute($extra,$eventName);
         }
@@ -123,7 +123,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             
         }
     }
-    public static function processModule(string $moduleName,string $path)
+    public static function processModule(string $moduleName,string $path,string $type)
     {
         if($type=='install')
         {

@@ -94,6 +94,10 @@ class AutoLoad
             
             foreach($psr as $key=>$val)
             {
+                if(empty($val))
+                {
+                    continue;
+                }
                 if(is_array($val))
                 {
                     if(isset($psrData[$key]))

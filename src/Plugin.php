@@ -79,8 +79,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         if(str_starts_with($name,'xq-app-'))
         {
             $moduleName=str_replace('xq-app-','',$name);
-            $ns='xqkeji\\app\\'.$moduleName;
-            self::processModule($ns,$path.DIRECTORY_SEPARATOR.'src',$type);
+            self::processModule($moduleName,$path.DIRECTORY_SEPARATOR.'src',$type);
             $extra=$package->getExtra();
             self::execute($extra,$eventName);
         }

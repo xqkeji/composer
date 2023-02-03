@@ -84,7 +84,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             self::execute($extra,$eventName);
         }
         $autoload=$package->getAutoload();
-        self::processAutoLoad($autoload,$type);
+        self::processAutoLoad($packageName,$autoload,$type);
     }
     
     public static function execute(array $extra,string $scriptName)

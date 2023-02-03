@@ -4,7 +4,7 @@ namespace xqkeji\composer;
 class App
 {
     use PathTrait;
-    public static function addModule($name,$path) : void
+    public static function addModule($name,string $packageName) : void
     {
         $configPath=self::getRootConfigPath();
         $configFile=$configPath.DIRECTORY_SEPARATOR.'composer.php';
@@ -18,15 +18,15 @@ class App
             {
                 $config=[];
             }
-            $config[$name]=$path;
+            $config[$name]=$packageName;
             self::filePutContents($configFile,$config);
         }
     }
-    public static function updateModule($name,$path) : void
+    public static function updateModule($name,string $packageName) : void
     {
-        self::addModule($name,$path);
+        self::addModule($name,$packageName);
     }
-    public static function removeModule($name,$path) : void
+    public static function removeModule($name) : void
     {
         $configPath=self::getRootConfigPath();
         $configFile=$configPath.DIRECTORY_SEPARATOR.'composer.php';

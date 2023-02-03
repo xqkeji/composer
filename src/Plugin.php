@@ -79,7 +79,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         if(str_starts_with($name,'xq-app-'))
         {
             $moduleName=str_replace('xq-app-','',$name);
-            self::processModule($moduleName,$path.DIRECTORY_SEPARATOR.'src',$type);
+            self::processModule($moduleName,$packageName,$type);
             $extra=$package->getExtra();
             self::execute($extra,$eventName);
         }
@@ -168,35 +168,35 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         }
         return $data;
     }
-    public static function processModule(string $moduleName,string $path,string $type)
+    public static function processModule(string $moduleName,string $packageName,string $type)
     {
         if($type=='install')
         {
-            App::addModule($moduleName,$path);
+            App::addModule($moduleName,$packageName);
         }
         elseif($type=='uninstall')
         {
-            App::removeModule($moduleName,$path);
+            App::removeModule($moduleName);
         }
         elseif($type=='update')
         {
-            App::updateModule($moduleName,$path);
+            App::updateModule($moduleName,$packageName);
         }
 
     }
-    public static function processAutoLoad(array $autoload,string $type)
+    public static function processAutoLoad(string $packageName,array $autoload,string $type)
     {
         if($type=='install')
         {
-            AutoLoad::addLoad($autoload,$type);
+            AutoLoad::addLoad($packageName,$autoload);
         }
         elseif($type=='uninstall')
         {
-            AutoLoad::removeLoad($autoload,$type);
+            AutoLoad::removeLoad($autoload);
         }
         elseif($type=='update')
         {
-            AutoLoad::updateLoad($autoload,$type);
+            AutoLoad::updateLoad($packageName,$autoload);
         }
 
     }

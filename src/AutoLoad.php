@@ -4,7 +4,7 @@ namespace xqkeji\composer;
 class AutoLoad
 {
     use PathTrait;
-    public static function addLoad(array $autoload)
+    public static function addLoad(string $packageName,array $autoload)
     {
         $configPath=self::getRootConfigPath();
         $configFile=$configPath.DIRECTORY_SEPARATOR.'loader.php';
@@ -21,11 +21,11 @@ class AutoLoad
             
             if(isset($autoload['psr-4']))
             {
-                self::processAdd($configFile,$data,$autoload,'psr-4');
+                self::processAdd($configFile,$data,$packageName,$autoload,'psr-4');
             }
             elseif(isset($autoload['psr-0']))
             {
-                self::processAdd($configFile,$data,$autoload,'psr-0');
+                self::processAdd($configFile,$data,$packageName,$autoload,'psr-0');
             }
         }
         
@@ -50,7 +50,7 @@ class AutoLoad
             }
         }
     }
-    public static function updateLoad(array $autoload)
+    public static function updateLoad(string $packageName,array $autoload)
     {
         $configPath=self::getRootConfigPath();
         $configFile=$configPath.DIRECTORY_SEPARATOR.'loader.php';
@@ -68,16 +68,16 @@ class AutoLoad
             if(isset($autoload['psr-4']))
             {
                 self::processRemove($configFile,$data,$autoload,'psr-4');
-                self::processAdd($configFile,$data,$autoload,'psr-4');
+                self::processAdd($configFile,$data,$packageName,$autoload,'psr-4');
             }
             elseif(isset($autoload['psr-0']))
             {
                 self::processRemove($configFile,$data,$autoload,'psr-0');
-                self::processAdd($configFile,$data,$autoload,'psr-0');
+                self::processAdd($configFile,$data,$packageName,$autoload,'psr-0');
             }
         }
     }
-    private static function processAdd(string $configFile,array $data,array $autoload,string $type) : void
+    private static function processAdd(string $configFile,array $data,string $packageName,array $autoload,string $type) : void
     {
         $psr=$autoload[$type];//composer包里自动加载的配置数据
         if(isset($data[$type]))
@@ -107,17 +107,17 @@ class AutoLoad
                         {
                             if(!in_array($v,$arr))
                             {
-                                $psrData[$key][]=$v;
+                                $psrData[$key][]=$packageName.'/'.$v;
                             }
                             else
                             {
-                                $psrData[$key][]=$v;
+                                $psrData[$key][]=$packageName.'/'.$v;
                             }
                         }
                     }
                     else
                     {
-                        $psrData[$key]=$val;
+                        $psrData[$key]=$packageName.'/'.$val;
                     }
                 }
                 elseif(is_string($val))
@@ -127,12 +127,12 @@ class AutoLoad
                         $arr=$psrData[$key];
                         if(!in_array($val,$arr))
                         {
-                            $psrData[$key][]=$val;
+                            $psrData[$key][]=$packageName.'/'.$val;
                         }
                     }
                     else
                     {
-                        $psrData[$key]=[$val];
+                        $psrData[$key]=[$packageName.'/'.$val];
                     }
                 }
             }

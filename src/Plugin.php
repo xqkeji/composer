@@ -107,7 +107,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                             {
                                 $fileName=str_replace(["xqkeji\\app\\","\\"],['',DIRECTORY_SEPARATOR],$className);
                                 $fileName=strstr($fileName,DIRECTORY_SEPARATOR).'.php';
-                                $filePath=self::getVendorPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$packageName).DIRECTORY_SEPARATOR.$fileName;
+                                $filePath=self::getVendorPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$packageName).DIRECTORY_SEPARATOR."src".$fileName;
                                 if(is_file($filePath))
                                 {
                                     include($filePath);

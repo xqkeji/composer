@@ -81,13 +81,13 @@ class Plugin implements PluginInterface, EventSubscriberInterface
             $moduleName=str_replace('xq-app-','',$name);
             self::processModule($moduleName,$packageName,$type);
             $extra=$package->getExtra();
-            self::execute($extra,$eventName);
+            self::execute($extra,$eventName,$packageName);
         }
         $autoload=$package->getAutoload();
         self::processAutoLoad($packageName,$autoload,$type);
     }
     
-    public static function execute(array $extra,string $scriptName)
+    public static function execute(array $extra,string $scriptName,string $packageName='')
     {
         if(isset($extra[$scriptName]))
         {
@@ -99,7 +99,31 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                     if(isset($execute['cmd']))
                     {
                         $cmd=$execute['cmd'];
-                        $param=isset($execute['param'])?$execute['param']:null;
+                        $className=$cmd[0];
+                        //判断类是否存在，不存在得自己加载
+                        if(!class_exists($className))
+                        {
+                            if(str_starts_with($className,"xqkeji\\app\\"))
+                            {
+                                $fileName=str_replace(["xqkeji\\app\\","\\"],['',DIRECTORY_SEPARATOR],$className);
+                                $fileName=strstr($fileName,DIRECTORY_SEPARATOR).'.php';
+                                $filePath=self::getVendorPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$packageName).DIRECTORY_SEPARATOR.$fileName;
+                                if(is_file($filePath))
+                                {
+                                    include($filePath);
+                                }
+                                else
+                                {
+                                    throw new \Exception("the class \"$className\" not exists and the class filename \"$filePath\" not exists too!" , $e->getCode());
+                                }
+                            }
+                            else
+                            {
+                                throw new \Exception("the class \"$className\" not exists and the class name not start with \"xqkeji\\app\\\" too!" , $e->getCode());
+                            }
+                        }
+                        
+                        $param=$execute['param'] ?? null;
                         $params=[];
                         if(!empty($param))
                         {

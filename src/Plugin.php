@@ -114,12 +114,12 @@ class Plugin implements PluginInterface, EventSubscriberInterface
                                 }
                                 else
                                 {
-                                    throw new \Exception("the class \"$className\" not exists and the class filename \"$filePath\" not exists too!" , $e->getCode());
+                                    throw new \Exception("the class \"$className\" not exists and the class filename \"$filePath\" not exists too!" , 500);
                                 }
                             }
                             else
                             {
-                                throw new \Exception("the class \"$className\" not exists and the class name not start with \"xqkeji\\app\\\" too!" , $e->getCode());
+                                throw new \Exception("the class \"$className\" not exists and the class name not start with \"xqkeji\\app\\\" too!" ,500);
                             }
                         }
                         

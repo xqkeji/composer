@@ -1,6 +1,6 @@
 {
     "name": "xqkeji/composer",
-    "description": "新齐科技中心相关程序的compser工具。",
+    "description": "基于新齐低代码开发框架的composer插件。",
     "type": "composer-plugin",
     "license": "SSPL-1.0",
     "autoload": {

@@ -1,9 +1,9 @@
 <?php
-namespace xqkeji\composer;
-
-class Container
+namespace xqkeji\app\composer;
+use MongoDB\Driver\Manager;
+use MongoDB\Driver\Command;
+class Install
 {
-    use PathTrait;
     public static function random(int $length=24):string
     {
         $text='';
@@ -21,7 +21,14 @@ class Container
 
         return $text;
     }
-    
+    public static function getRootPath():string
+    {
+        return dirname(__DIR__,2);
+    }
+    public static function getRootConfigPath():string
+    {
+        return dirname(__DIR__,2).DIRECTORY_SEPARATOR.'config';
+    }
     public static function postInstall() : void
     {
         $configPath=self::getRootConfigPath();
@@ -107,4 +114,5 @@ class Container
         chmod($upload_path,0777);
         chmod($assets_path,0777);
     }
+    
 }

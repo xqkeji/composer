@@ -1,6 +1,7 @@
 <?php
 namespace xqkeji\composer;
-
+use MongoDB\Driver\Manager;
+use MongoDB\Driver\Command;
 class Container
 {
     use PathTrait;

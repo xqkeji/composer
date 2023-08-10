@@ -25,8 +25,10 @@ class Container
     
     public static function postInstall($event) : void
     {
-        var_export($event->getIO());
-        var_export($event->getComposer());
+        $conposer=$event->getComposer();
+        var_export($conposer->getConfig());
+        var_export($conposer->getIO());
+        
         exit(0);
         $configPath=self::getRootConfigPath();
         $containerFile=$configPath.DIRECTORY_SEPARATOR.'container.php';

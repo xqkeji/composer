@@ -104,9 +104,11 @@ class Container
         }
         $root_path=self::getRootPath();
         $runtime_path=$root_path.DIRECTORY_SEPARATOR.'runtime';
+        $session_path=$runtime_path.DIRECTORY_SEPARATOR.'session';
         $upload_path=$root_path.DIRECTORY_SEPARATOR.'www'.DIRECTORY_SEPARATOR.'upload';
         $assets_path=$root_path.DIRECTORY_SEPARATOR.'www'.DIRECTORY_SEPARATOR.'assets';
         chmod($runtime_path,0777);
+        chmod($session_path,0777);
         chmod($upload_path,0777);
         chmod($assets_path,0777);
     }

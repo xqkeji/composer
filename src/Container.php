@@ -25,11 +25,8 @@ class Container
     
     public static function postInstall($event) : void
     {
-        var_export(getcwd());
-        $input=$event->getInput();
-        var_export($input);
+        $dirname=basename(getcwd());
         
-        exit(0);
         $configPath=self::getRootConfigPath();
         $containerFile=$configPath.DIRECTORY_SEPARATOR.'container.php';
         if(is_dir($configPath))
@@ -49,10 +46,10 @@ class Container
                     {
                         $hostport='27017';
                     }
-                    $database = readline("请输入数据库名称[默认为：xqkeji_db]\r\n");
+                    $database = readline("请输入数据库名称[默认为：".$dirname."_db]\r\n");
                     if(trim($database)=='')
                     {
-                        $database='xqkeji_db';
+                        $database=$dirname.'_db';
                     }
                     $username = readline("请输入数据库用户名[默认为：空]\r\n");
                     if(trim($username)=='')

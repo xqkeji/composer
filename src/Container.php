@@ -23,7 +23,7 @@ class Container
         return $text;
     }
     
-    public static function postInstall(Event $event) : void
+    public static function postInstall($event) : void
     {
         var_export($event);
         exit(0);

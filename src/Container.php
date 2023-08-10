@@ -25,9 +25,8 @@ class Container
     
     public static function postInstall($event) : void
     {
-        $conposer=$event->getComposer();
-        var_export($conposer->getConfig()->get('baseDir'));
-        var_export($event->getIO()->getInput());
+        $input=$event->getInput();
+        var_export($input);
         
         exit(0);
         $configPath=self::getRootConfigPath();

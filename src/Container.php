@@ -25,6 +25,7 @@ class Container
     
     public static function postInstall($event) : void
     {
+        var_export(getcwd());
         $input=$event->getInput();
         var_export($input);
         

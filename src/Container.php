@@ -23,8 +23,10 @@ class Container
         return $text;
     }
     
-    public static function postInstall() : void
+    public static function postInstall(Event $event) : void
     {
+        var_export($event);
+        exit(0);
         $configPath=self::getRootConfigPath();
         $containerFile=$configPath.DIRECTORY_SEPARATOR.'container.php';
         if(is_dir($configPath))
@@ -34,10 +36,10 @@ class Container
             {
                 while(true)
                 {
-                    $hostname = readline("请输入数据库服务器地址[默认为：localhost]\r\n");
+                    $hostname = readline("请输入数据库服务器地址[默认为：172.0.0.100]\r\n");
                     if(trim($hostname)=='')
                     {
-                        $hostname='localhost';
+                        $hostname='172.0.0.100';
                     }
                     $hostport = readline("请输入数据库服务器的端口号[默认为：27017]\r\n");
                     if(trim($hostport)=='')

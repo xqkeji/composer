@@ -76,9 +76,9 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         $packageName = $package->getName();
         $path=self::getVendorPath().DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$packageName);
         $name=basename($path);
-        if(str_starts_with($name,'xq-app-'))
+        if(str_starts_with($name,'xq-app-')||str_starts_with($name,'xq-com-'))
         {
-            $moduleName=str_replace('xq-app-','',$name);
+            $moduleName=str_replace(['xq-app-','xq-com-'],'',$name);
             self::processModule($moduleName,$packageName,$type);
             $extra=$package->getExtra();
             self::execute($extra,$eventName,$packageName);

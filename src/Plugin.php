@@ -79,7 +79,10 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         if(str_starts_with($name,'xq-app-')||str_starts_with($name,'xq-com-'))
         {
             $moduleName=str_replace(['xq-app-','xq-com-'],'',$name);
-            self::processModule($moduleName,$packageName,$type);
+            if(str_starts_with($name,'xq-app-'))
+            {
+                self::processModule($moduleName,$packageName,$type);
+            }
             $extra=$package->getExtra();
             self::execute($extra,$eventName,$packageName);
         }

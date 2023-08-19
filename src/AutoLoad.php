@@ -68,11 +68,13 @@ class AutoLoad
             if(isset($autoload['psr-4']))
             {
                 self::processRemove($configFile,$data,$autoload,'psr-4');
+                $data=include($configFile);
                 self::processAdd($configFile,$data,$packageName,$autoload,'psr-4');
             }
             elseif(isset($autoload['psr-0']))
             {
                 self::processRemove($configFile,$data,$autoload,'psr-0');
+                $data=include($configFile);
                 self::processAdd($configFile,$data,$packageName,$autoload,'psr-0');
             }
         }

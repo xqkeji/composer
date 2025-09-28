@@ -15,6 +15,8 @@ use Composer\Installer\PackageEvent;
 use xqkeji\composer\AutoLoad;
 use xqkeji\composer\App;
 use xqkeji\composer\Asset;
+use xqkeji\composer\Gen;
+
 
 class Plugin implements PluginInterface, EventSubscriberInterface 
 {
@@ -29,7 +31,9 @@ class Plugin implements PluginInterface, EventSubscriberInterface
     {
         $this->composer = $composer;
         $this->io = $io;
-        
+        // 注册自定义脚本处理器
+        $dispatcher = $composer->getEventDispatcher();
+        $dispatcher->addSubscriber(new Gen($io, $composer));
     }
     public function deactivate(Composer $composer, IOInterface $io)
     {

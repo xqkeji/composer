@@ -6,7 +6,7 @@ return [
 		//只有得到授权并登录后才有访问权限
 		'auth'=>[
 			'控制器名称'=>['动作1','动作2'],
-			'customer'=>['admin','add','edit','delete','change','b_delete'],
+			'{MODULE_NAME}'=>['admin','add','edit','delete','change','b_delete'],
 		],
 		//登录后就有访问权限
 		'login'=>[

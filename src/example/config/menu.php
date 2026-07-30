@@ -12,39 +12,14 @@ return [
 		],
 	]
 	*/
-	/*
-	'title'=>'客户关系管理',
+	'title'=>'{MODULE_NAME}管理',
 	'children'=>[
+		/*
 		[
-			'url'=>'customer_type/admin',
-			'title'=>'客户类别管理',
-			'icon'=>'bi bi-columns',
+			'url'=>'控制器/动作',
+			'title'=>'功能名称',
+			'icon'=>'bi bi-list',
 		],
-		
-		[
-			'url'=>'customer/admin',
-			'title'=>'客户信息管理',
-			'icon'=>'bi bi-info-square',
-		],
-		[
-			'url'=>'credit_level/admin',
-			'title'=>'信用等级管理',
-			'icon'=>'bi bi-water',
-		],
-		[
-			'url'=>'credit/admin',
-			'title'=>'客户信用管理',
-			'icon'=>'bi bi-credit-card-2-front',
-		],
-		[
-			'url'=>'order/admin',
-			'title'=>'客户订单管理',
-			'icon'=>'bi bi-cart',
-		],
-		[
-			'url'=>'track/admin',
-			'title'=>'客户跟踪管理',
-			'icon'=>'bi bi-sign-railroad',
-		],
-	]*/
+		*/
+	]
 ];

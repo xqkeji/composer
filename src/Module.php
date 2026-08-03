@@ -3,11 +3,17 @@ namespace xqkeji\composer;
 
 use Composer\Composer;
 use Composer\IO\IOInterface;
+use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Util\Filesystem;
 
-class Module
+class Module implements EventSubscriberInterface
 {
     use PathTrait;
+
+    public static function getSubscribedEvents(): array
+    {
+        return [];
+    }
     
     private IOInterface $io;
     private Composer $composer;

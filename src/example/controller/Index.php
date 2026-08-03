@@ -1,12 +1,12 @@
 <?php
-namespace app\{MODULE_NAME}\controller;
+namespace xqkeji\app\{MODULE_NAME}\controller;
 
-use xqkeji\controller\Base;
+use xqkeji\mvc\Controller;
 
-class Index extends Base
+class Index extends Controller
 {
     public function index()
     {
-        return $this->display('{MODULE_NAME}/index');
+        
     }
 }

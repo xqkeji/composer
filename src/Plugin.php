@@ -5,6 +5,7 @@ use Composer\Composer;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\IO\IOInterface;
 use Composer\Plugin\PluginInterface;
+use Composer\Plugin\Capable;
 use Composer\Plugin\PluginEvents;
 use Composer\Script\ScriptEvents;
 use Composer\Plugin\CommandEvent;
@@ -18,7 +19,7 @@ use xqkeji\composer\Asset;
 use xqkeji\composer\Module;
 
 
-class Plugin implements PluginInterface, EventSubscriberInterface 
+class Plugin implements PluginInterface, EventSubscriberInterface, Capable
 {
     use PathTrait;
     protected $composer;
@@ -34,6 +35,13 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         // 注册自定义脚本处理器
         $dispatcher = $composer->getEventDispatcher();
         $dispatcher->addSubscriber(new Module($io, $composer));
+    }
+    
+    public function getCapabilities()
+    {
+        return [
+            \Composer\Plugin\Capability\CommandProvider::class => \xqkeji\composer\CommandProvider::class,
+        ];
     }
     public function deactivate(Composer $composer, IOInterface $io)
     {

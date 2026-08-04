@@ -1,14 +1,18 @@
 <?php
 namespace xqkeji\composer;
 
+use Composer\Factory;
+
 trait PathTrait{
     public static function getRootPath() : string
     {
-        return dirname(__DIR__,4);
+        // 使用 Composer 获取项目根目录
+        $composerFile = Factory::getComposerFile();
+        return dirname(realpath($composerFile));
     }
     public static function getRootConfigPath() : string
     {
-        return dirname(__DIR__,4).DIRECTORY_SEPARATOR.'config';
+        return self::getRootPath().DIRECTORY_SEPARATOR.'config';
     }
     public static function getDs() : string
     {
@@ -16,11 +20,11 @@ trait PathTrait{
     }
     public static function getRuntimePath() : string
     {
-        return dirname(__DIR__,4).DIRECTORY_SEPARATOR.'runtime';
+        return self::getRootPath().DIRECTORY_SEPARATOR.'runtime';
     }
     public static function getVendorPath() : string
     {
-        return dirname(__DIR__,4).DIRECTORY_SEPARATOR.'vendor';
+        return self::getRootPath().DIRECTORY_SEPARATOR.'vendor';
     }
     public static function filePutContents(string $filename,array $data) : void
     {

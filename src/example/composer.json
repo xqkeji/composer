@@ -14,11 +14,6 @@
         }
     ],
     "extra": {
-        "post-package-install":[
-            {
-                "cmd":[]
-            }
-        ]
     },
     "require": {
         "xqkeji/xq-app-admin":"^1.0"

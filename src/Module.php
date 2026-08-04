@@ -5,6 +5,8 @@ use Composer\Composer;
 use Composer\IO\IOInterface;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Util\Filesystem;
+use Composer\Factory;
+use Composer\Installer;
 
 class Module implements EventSubscriberInterface
 {
@@ -59,6 +61,16 @@ class Module implements EventSubscriberInterface
     }
 
     /**
+     * 获取项目根目录（通过 Composer）
+     */
+    private function getProjectRootPath(): string
+    {
+        // 使用 composer.json 所在目录作为项目根目录
+        $composerFile = Factory::getComposerFile();
+        return dirname(realpath($composerFile));
+    }
+
+    /**
      * 获取当前模块路径
      */
     private function getCurrentModulePath(): ?string
@@ -67,7 +79,7 @@ class Module implements EventSubscriberInterface
             return null;
         }
         
-        $rootPath = self::getRootPath();
+        $rootPath = $this->getProjectRootPath();
         $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $this->currentModule;
         
         if (is_dir($modulePath)) {
@@ -89,7 +101,7 @@ class Module implements EventSubscriberInterface
         }
 
         // 检查模块是否存在
-        $rootPath = self::getRootPath();
+        $rootPath = $this->getProjectRootPath();
         $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
         
         if (!is_dir($modulePath)) {
@@ -150,7 +162,8 @@ class Module implements EventSubscriberInterface
             return;
         }
 
-        $rootPath = self::getRootPath();
+        // 获取当前项目的根目录（通过 Composer）
+        $rootPath = $this->getProjectRootPath();
         $appPath = $rootPath . DIRECTORY_SEPARATOR . 'app';
         $modulePath = $appPath . DIRECTORY_SEPARATOR . $moduleName;
 
@@ -238,13 +251,17 @@ class Module implements EventSubscriberInterface
         // 更新包的 composer.json
         $this->updatePackageComposerJson($fullTargetPath, $packageName, $moduleName);
 
+        // 获取当前项目的根目录（通过 Composer）
+        $projectPath = $this->getProjectRootPath();
+
         // 更新当前项目的 composer.json，添加 path repository
-        $projectPath = self::getRootPath();
         $this->updateProjectComposerJson($projectPath, $packageName, $fullTargetPath);
 
         $this->io->write("<info>✓ Composer 包模块 '$packageName' 已成功创建: $fullTargetPath</info>");
         $this->showGeneratedStructure($fullTargetPath);
-        $this->io->write("<comment>请运行 'composer update' 让 Composer 自动安装软链接</comment>");
+
+        // 创建软链接到 vendor 目录
+        $this->createSymlink($projectPath, $packageName, $fullTargetPath);
 
         // 自动设置为当前模块
         $this->saveCurrentModule($moduleName);
@@ -416,6 +433,72 @@ PHP;
         file_put_contents($composerFile, $jsonContent);
 
         $this->io->write("<info>✓ 已更新包的 composer.json</info>");
+    }
+
+    /**
+     * 创建软链接到 vendor 目录
+     */
+    private function createSymlink(string $projectPath, string $packageName, string $packagePath): void
+    {
+        $vendorPath = $projectPath . DIRECTORY_SEPARATOR . 'vendor';
+        $targetPath = $vendorPath . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
+
+        // 创建 vendor 目录（如果不存在）
+        if (!is_dir($vendorPath)) {
+            mkdir($vendorPath, 0755, true);
+        }
+
+        // 创建包的 vendor 目录（如果不存在）
+        $packageVendorDir = dirname($targetPath);
+        if (!is_dir($packageVendorDir)) {
+            mkdir($packageVendorDir, 0755, true);
+        }
+
+        // 如果目标已存在，先删除
+        if (is_link($targetPath)) {
+            unlink($targetPath);
+        } elseif (is_dir($targetPath)) {
+            // 使用 Filesystem 的 removeDirectory 方法
+            $this->filesystem->removeDirectory($targetPath);
+        }
+
+        // 确保目标路径完全不存在
+        if (file_exists($targetPath)) {
+            $this->io->write("<error>无法删除已存在的目录: $targetPath</error>");
+            return;
+        }
+
+        // 创建软链接（Windows 使用 junction，Linux/Mac 使用 symlink）
+        if (DIRECTORY_SEPARATOR === '\\') {
+            // Windows: 使用 junction（不需要管理员权限）
+            // 确保路径是绝对路径
+            $targetPath = realpath(dirname($targetPath)) . DIRECTORY_SEPARATOR . basename($targetPath);
+            $packagePath = realpath($packagePath);
+
+            if ($packagePath === false) {
+                $this->io->write("<error>包路径不存在: $packagePath</error>");
+                return;
+            }
+
+            // 使用 exec 创建 junction
+            $command = sprintf('mklink /J "%s" "%s"', $targetPath, $packagePath);
+            exec($command, $output, $returnCode);
+
+            if (is_dir($targetPath)) {
+                $this->io->write("<info>✓ 已创建 junction: $targetPath -> $packagePath</info>");
+            } else {
+                $this->io->write("<error>✗ 创建 junction 失败</error>");
+                $this->io->write("<comment>错误信息: " . implode("\n", $output) . "</comment>");
+                $this->io->write("<comment>请手动运行: $command</comment>");
+            }
+        } else {
+            // Linux/Mac: 使用 symlink
+            if (symlink($packagePath, $targetPath)) {
+                $this->io->write("<info>✓ 已创建软链接: $targetPath -> $packagePath</info>");
+            } else {
+                $this->io->write("<error>✗ 创建软链接失败: $targetPath</error>");
+            }
+        }
     }
 
     /**

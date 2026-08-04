@@ -5,7 +5,7 @@ use Composer\Command\BaseCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use xqkeji\composer\Module;
+use xqkeji\composer\Controller;
 
 class ControllerCommand extends BaseCommand
 {
@@ -14,17 +14,19 @@ class ControllerCommand extends BaseCommand
         $this->setName('xqkeji:controller')
             ->setDescription('创建控制器')
             ->addArgument('name', InputArgument::REQUIRED, '控制器名称')
-            ->addArgument('action', InputArgument::OPTIONAL, '动作名称');
+            ->addArgument('auth_entry', InputArgument::OPTIONAL, '权限入口（默认 guest）', 'guest')
+            ->addArgument('actions', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '动作列表（默认为空）', []);
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $module = new Module($this->getIO(), $this->requireComposer());
+        $controller = new Controller($this->getIO(), $this->requireComposer());
         
         $name = $input->getArgument('name');
-        $action = $input->getArgument('action');
+        $authEntry = $input->getArgument('auth_entry');
+        $actions = $input->getArgument('actions');
         
-        $module->createController($name, $action);
+        $controller->createController($name, $authEntry, $actions);
         
         return 0;
     }

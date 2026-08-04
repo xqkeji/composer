@@ -242,12 +242,10 @@ class Module implements EventSubscriberInterface
         $projectPath = self::getRootPath();
         $this->updateProjectComposerJson($projectPath, $packageName, $fullTargetPath);
 
-        // 创建软链接到当前项目的 vendor 目录
-        $this->createSymlink($fullTargetPath, $packageName);
-
         $this->io->write("<info>✓ Composer 包模块 '$packageName' 已成功创建: $fullTargetPath</info>");
         $this->showGeneratedStructure($fullTargetPath);
-        
+        $this->io->write("<comment>请运行 'composer update' 让 Composer 自动安装软链接</comment>");
+
         // 自动设置为当前模块
         $this->saveCurrentModule($moduleName);
     }
@@ -473,34 +471,6 @@ PHP;
         file_put_contents($composerFile, $jsonContent);
 
         $this->io->write("<info>✓ 已更新项目的 composer.json，添加了 path repository</info>");
-    }
-
-    /**
-     * 创建软链接安装到当前项目
-     */
-    private function createSymlink(string $sourcePath, string $packageName): void
-    {
-        $vendorPath = self::getVendorPath();
-        $targetPath = $vendorPath . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
-
-        // 创建 vendor 目录（如果不存在）
-        if (!is_dir(dirname($targetPath))) {
-            mkdir(dirname($targetPath), 0755, true);
-        }
-
-        // 如果目标已存在，先删除
-        if (is_link($targetPath)) {
-            unlink($targetPath);
-        } elseif (is_dir($targetPath)) {
-            $this->filesystem->removeDirectory($targetPath);
-        }
-
-        // 创建软链接
-        if (symlink($sourcePath, $targetPath)) {
-            $this->io->write("<info>✓ 已创建软链接: $targetPath -> $sourcePath</info>");
-        } else {
-            $this->io->write("<error>✗ 创建软链接失败: $targetPath</error>");
-        }
     }
 
     /**

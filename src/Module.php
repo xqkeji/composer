@@ -166,15 +166,15 @@ class Module implements EventSubscriberInterface
             $this->io->write("<info>创建 app 目录: $appPath</info>");
         }
 
-        // 复制示例代码
-        $examplePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'example';
+        // 使用 example/src/ 里的模板代码
+        $exampleSrcPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'example' . DIRECTORY_SEPARATOR . 'src';
         
-        if (!is_dir($examplePath)) {
-            $this->io->write("<error>示例代码目录不存在: $examplePath</error>");
+        if (!is_dir($exampleSrcPath)) {
+            $this->io->write("<error>示例代码目录不存在: $exampleSrcPath</error>");
             return;
         }
 
-        $this->copyDirectory($examplePath, $modulePath, $moduleName);
+        $this->copyDirectory($exampleSrcPath, $modulePath, $moduleName);
         
         $this->io->write("<info>✓ 模块 '$moduleName' 已成功创建: $modulePath</info>");
         $this->showGeneratedStructure($modulePath);
@@ -195,10 +195,10 @@ class Module implements EventSubscriberInterface
             return;
         }
 
-        // 强制指定本地路径（项目路径）
+        // 强制指定本地路径
         if (empty($targetPath)) {
-            $this->io->write('<error>创建 composer 包模块必须指定项目路径</error>');
-            $this->io->write('<info>用法: composer xqkeji:module vendor/package /path/to/project</info>');
+            $this->io->write('<error>创建 composer 包模块必须指定本地路径</error>');
+            $this->io->write('<info>用法: composer xqkeji:module vendor/package /path/to/local</info>');
             return;
         }
 
@@ -212,10 +212,9 @@ class Module implements EventSubscriberInterface
             $moduleName = substr($package, 7);
         }
 
-        // 模块路径在项目的 vendor 目录下
-        $projectPath = rtrim($targetPath, '/\\');
-        $vendorPath = $projectPath . DIRECTORY_SEPARATOR . 'vendor';
-        $fullTargetPath = $vendorPath . DIRECTORY_SEPARATOR . $packageName;
+        // 在指定的本地路径创建包目录（如 xq-app-site）
+        $localPath = rtrim($targetPath, '/\\');
+        $fullTargetPath = $localPath . DIRECTORY_SEPARATOR . $package;
 
         // 检查目录是否已存在
         if (is_dir($fullTargetPath)) {
@@ -226,7 +225,7 @@ class Module implements EventSubscriberInterface
         // 创建目录结构
         mkdir($fullTargetPath, 0755, true);
 
-        // 复制示例代码
+        // 使用 example/ 完整结构（包含 .gitignore、composer.json、LICENSE、README.md）
         $examplePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'example';
         
         if (!is_dir($examplePath)) {
@@ -236,14 +235,11 @@ class Module implements EventSubscriberInterface
 
         $this->copyDirectory($examplePath, $fullTargetPath, $moduleName);
 
-        // 更新项目的 composer.json，添加 path repository
-        $this->updateProjectComposerJson($projectPath, $packageName, $fullTargetPath);
+        // 更新包的 composer.json
+        $this->updatePackageComposerJson($fullTargetPath, $packageName, $moduleName);
 
         $this->io->write("<info>✓ Composer 包模块 '$packageName' 已成功创建: $fullTargetPath</info>");
         $this->showGeneratedStructure($fullTargetPath);
-        
-        // 自动设置为当前模块
-        $this->saveCurrentModule($moduleName);
     }
 
     /**
@@ -375,56 +371,43 @@ PHP;
     }
 
     /**
-     * 更新项目的 composer.json，添加 path repository
+     * 更新包的 composer.json
      */
-    private function updateProjectComposerJson(string $projectPath, string $packageName, string $modulePath): void
+    private function updatePackageComposerJson(string $packagePath, string $packageName, string $moduleName): void
     {
-        $composerFile = $projectPath . DIRECTORY_SEPARATOR . 'composer.json';
+        $composerFile = $packagePath . DIRECTORY_SEPARATOR . 'composer.json';
         
         if (!is_file($composerFile)) {
-            $this->io->write("<error>项目 composer.json 不存在: $composerFile</error>");
+            $this->io->write("<error>包的 composer.json 不存在: $composerFile</error>");
             return;
         }
 
         $composerJson = json_decode(file_get_contents($composerFile), true);
         if ($composerJson === null) {
-            $this->io->write("<error>项目 composer.json 格式无效</error>");
+            $this->io->write("<error>包的 composer.json 格式无效</error>");
             return;
         }
 
-        // 添加 path repository
-        if (!isset($composerJson['repositories'])) {
-            $composerJson['repositories'] = [];
+        // 更新包名
+        $composerJson['name'] = $packageName;
+        
+        // 更新描述
+        $composerJson['description'] = "基于新齐低代码开发框架的{$moduleName}模块";
+        
+        // 更新 autoload 配置
+        if (!isset($composerJson['autoload'])) {
+            $composerJson['autoload'] = [];
         }
-
-        // 检查是否已存在该包的 repository
-        $exists = false;
-        foreach ($composerJson['repositories'] as $repo) {
-            if (isset($repo['type']) && $repo['type'] === 'path' && 
-                isset($repo['url']) && realpath($repo['url']) === realpath($modulePath)) {
-                $exists = true;
-                break;
-            }
+        if (!isset($composerJson['autoload']['psr-4'])) {
+            $composerJson['autoload']['psr-4'] = [];
         }
-
-        if (!$exists) {
-            $composerJson['repositories'][] = [
-                'type' => 'path',
-                'url' => $modulePath
-            ];
-        }
-
-        // 添加 require
-        if (!isset($composerJson['require'])) {
-            $composerJson['require'] = [];
-        }
-        $composerJson['require'][$packageName] = '*';
+        $composerJson['autoload']['psr-4']["xqkeji\\app\\{$moduleName}\\"] = 'src/';
 
         // 保存更新后的 composer.json
         $jsonContent = json_encode($composerJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         file_put_contents($composerFile, $jsonContent);
         
-        $this->io->write("<info>✓ 已更新项目 composer.json，添加了 path repository</info>");
+        $this->io->write("<info>✓ 已更新包的 composer.json</info>");
     }
 
     /**

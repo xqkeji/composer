@@ -1,0 +1,26 @@
+{
+    "name": "xqkeji/xq-app-{MODULE_NAME}",
+    "description": "一个基于新齐低代码开发框架后台管理的内容管理模块。",
+    "type": "library",
+    "license": "SSPL-1.0",
+    "autoload": {
+        "psr-4": {
+            "xqkeji\\app\\{MODULE_NAME}\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "xqkeji.cn"
+        }
+    ],
+    "extra": {
+        "post-package-install":[
+            {
+                "cmd":[]
+            }
+        ]
+    },
+    "require": {
+        "xqkeji/xq-app-admin":"^1.0"
+    }
+}

@@ -28,6 +28,28 @@ trait PathTrait{
     }
     public static function filePutContents(string $filename,array $data) : void
     {
-        file_put_contents($filename,"<?php\r\n return ".var_export($data,true).';');
+        file_put_contents($filename,"<?php\r\n return ".self::exportArray($data).';');
+    }
+
+    /**
+     * 将数组导出为短数组语法格式
+     */
+    public static function exportArray(array $data, int $indent = 1): string
+    {
+        $isAssoc = array_keys($data) !== range(0, count($data) - 1);
+        $spaces = str_repeat('    ', $indent);
+        $spacesClose = str_repeat('    ', $indent - 1);
+        $lines = [];
+
+        foreach ($data as $key => $value) {
+            $exportedValue = is_array($value) ? self::exportArray($value, $indent + 1) : var_export($value, true);
+            if ($isAssoc) {
+                $lines[] = $spaces . var_export($key, true) . ' => ' . $exportedValue . ',';
+            } else {
+                $lines[] = $spaces . $exportedValue . ',';
+            }
+        }
+
+        return "[\n" . implode("\n", $lines) . "\n" . $spacesClose . ']';
     }
 }

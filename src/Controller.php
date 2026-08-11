@@ -2,6 +2,7 @@
 namespace xqkeji\composer;
 
 use Composer\Composer;
+use Composer\Factory;
 use Composer\IO\IOInterface;
 
 class Controller
@@ -10,70 +11,43 @@ class Controller
 
     private IOInterface $io;
     private Composer $composer;
-    private ?string $currentModule = null;
+    private Context $context;
 
     public function __construct(IOInterface $io, Composer $composer)
     {
         $this->io = $io;
         $this->composer = $composer;
-        $this->loadCurrentModule();
-    }
-
-    /**
-     * 加载当前模块
-     */
-    private function loadCurrentModule(): void
-    {
-        $configFile = self::getRuntimePath() . DIRECTORY_SEPARATOR . 'composer' . DIRECTORY_SEPARATOR . 'current_module.php';
-        if (is_file($configFile)) {
-            $config = include $configFile;
-            $this->currentModule = $config['module'] ?? null;
-        }
-    }
-
-    /**
-     * 获取项目根目录（通过 Composer）
-     */
-    private function getProjectRootPath(): string
-    {
-        $composerFile = Factory::getComposerFile();
-        return dirname(realpath($composerFile));
-    }
-
-    /**
-     * 获取当前模块路径
-     */
-    private function getCurrentModulePath(): ?string
-    {
-        if ($this->currentModule === null) {
-            return null;
-        }
-        
-        $rootPath = $this->getProjectRootPath();
-        $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $this->currentModule;
-        
-        if (is_dir($modulePath)) {
-            return $modulePath;
-        }
-        
-        return null;
+        $this->context = new Context($io, $composer);
     }
 
     /**
      * 创建控制器（公开方法）
      */
-    public function createController(string $controllerName, string $authEntry = 'guest', array $actions = []): void
+    public function createController(string $controllerName, string $authEntry = 'guest', string $authType = 'auth', array $actions = []): void
     {
-        // 验证控制器名称
-        if (!preg_match('/^[a-z][a-z0-9_]*$/', $controllerName)) {
-            $this->io->write('<error>控制器名称格式无效，只能包含小写字母、数字和下划线，且以字母开头</error>');
+        // 验证控制器名称（支持大小写字母、数字和下划线）
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $controllerName)) {
+            $this->io->write('<error>控制器名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
             return;
         }
 
-        // 检查当前模块
-        $modulePath = $this->getCurrentModulePath();
-        if ($modulePath === null) {
+        // 转换为小写下划线格式，用于配置文件
+        $configName = $this->toSnakeCase($controllerName);
+
+        // 获取当前模块
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
             $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return;
+        }
+
+        // 获取有效的模块路径（支持本地模块和 composer 模块）
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在，请检查：</error>");
+            $this->io->write('  1. 模块是否在 app/ 目录下存在');
+            $this->io->write('  2. 模块是否是 composer 模块（通过 config/composer.php 配置）');
+            $this->io->write('  3. 模块的 config/acl.php 文件是否存在');
             return;
         }
 
@@ -81,21 +55,21 @@ class Controller
         $controllerPath = $modulePath . DIRECTORY_SEPARATOR . 'controller';
         $this->createControllerFile($controllerPath, $controllerName);
 
-        // 根据权限入口类型处理配置
+        // 根据权限入口类型处理配置（配置文件中使用小写下划线名称）
         if ($authEntry === 'admin') {
             // admin 入口：更新 ACL、menu 和 lang
-            $this->updateAclConfig($modulePath, $authEntry, $controllerName, $actions);
-            $this->updateMenuConfig($modulePath, $controllerName, $authEntry);
-            $this->updateLangConfig($modulePath, $controllerName, $actions);
+            $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
+            $this->updateMenuConfig($modulePath, $configName, $authEntry);
+            $this->updateLangConfig($modulePath, $configName, $actions);
         } elseif ($authEntry === 'guest') {
             // guest 入口：更新 ACL（默认 index 动作），不处理 menu 和 lang
             if (empty($actions)) {
                 $actions = ['index'];
             }
-            $this->updateAclConfig($modulePath, $authEntry, $controllerName, $actions);
+            $this->updateAclConfig($modulePath, $authEntry, $configName, $actions);
         } else {
             // 其他入口（如 member、teacher 等）：只更新 ACL，不处理 menu 和 lang
-            $this->updateAclConfig($modulePath, $authEntry, $controllerName, $actions);
+            $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
         }
     }
 
@@ -127,7 +101,8 @@ class Controller
      */
     private function generateControllerContent(string $className): string
     {
-        $namespace = "app\\{$this->currentModule}\\controller";
+        $currentModule = $this->context->getCurrentModule();
+        $namespace = "app\\{$currentModule}\\controller";
         
         return <<<PHP
 <?php
@@ -146,7 +121,7 @@ PHP;
     /**
      * 更新 ACL 配置
      */
-    private function updateAclConfig(string $modulePath, string $authEntry, string $controllerName, array $actions): void
+    private function updateAclConfig(string $modulePath, string $authEntry, string $controllerName, array $actions, string $authType = 'auth'): void
     {
         $aclFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'acl.php';
         
@@ -158,18 +133,25 @@ PHP;
         // 读取现有配置
         $aclConfig = include $aclFile;
         
-        // 添加控制器权限配置
-        if (!isset($aclConfig[$authEntry])) {
-            $aclConfig[$authEntry] = [];
+        // guest 入口：直接添加控制器和动作，不区分 auth/login
+        if ($authEntry === 'guest') {
+            if (!isset($aclConfig[$authEntry])) {
+                $aclConfig[$authEntry] = [];
+            }
+            $aclConfig[$authEntry][$controllerName] = $actions;
+        } else {
+            // 其他入口：区分 auth（需要授权）和 login（需要登录）
+            if (!isset($aclConfig[$authEntry])) {
+                $aclConfig[$authEntry] = [];
+            }
+            if (!isset($aclConfig[$authEntry][$authType])) {
+                $aclConfig[$authEntry][$authType] = [];
+            }
+            $aclConfig[$authEntry][$authType][$controllerName] = $actions;
         }
-        if (!isset($aclConfig[$authEntry]['auth'])) {
-            $aclConfig[$authEntry]['auth'] = [];
-        }
-        
-        $aclConfig[$authEntry]['auth'][$controllerName] = $actions;
         
         // 写回文件
-        $content = "<?php\r\nreturn " . var_export($aclConfig, true) . ";";
+        $content = "<?php\r\nreturn " . $this->exportArray($aclConfig) . ";";
         file_put_contents($aclFile, $content);
         
         $this->io->write("<info>✓ 已更新 ACL 配置: $aclFile</info>");
@@ -192,17 +174,18 @@ PHP;
         
         // 添加菜单项
         $className = $this->toCamelCase($controllerName);
+        $currentModule = $this->context->getCurrentModule();
         $menuConfig[] = [
-            'name' => "{$this->currentModule}.{$controllerName}.admin",
+            'name' => "{$currentModule}.{$controllerName}.admin",
             'title' => "{$className}管理",
-            'url' => "{$this->currentModule}/{$controllerName}/admin",
+            'url' => "{$currentModule}/{$controllerName}/admin",
             'icon' => 'list',
             'sort' => 0,
             'auth' => $authEntry !== 'guest'
         ];
         
         // 写回文件
-        $content = "<?php\r\nreturn " . var_export($menuConfig, true) . ";";
+        $content = "<?php\r\nreturn " . $this->exportArray($menuConfig) . ";";
         file_put_contents($menuFile, $content);
         
         $this->io->write("<info>✓ 已更新菜单配置: $menuFile</info>");
@@ -229,7 +212,8 @@ PHP;
         }
         
         $className = $this->toCamelCase($controllerName);
-        $prefix = "{$this->currentModule} {$controllerName}";
+        $currentModule = $this->context->getCurrentModule();
+        $prefix = "{$currentModule} {$controllerName}";
         
         // 添加语言配置
         foreach ($actions as $action) {
@@ -248,17 +232,49 @@ PHP;
             }
             
             // 权限描述
-            $langConfig["{$this->currentModule} module {$controllerName} {$action} auth"] = "{$actionClass}{$className}";
+            $langConfig["{$currentModule} module {$controllerName} {$action} auth"] = "{$actionClass}{$className}";
         }
         
         // 模块权限描述
-        $langConfig["{$this->currentModule} module {$controllerName} auth"] = "{$className}管理";
+        $langConfig["{$currentModule} module {$controllerName} auth"] = "{$className}管理";
         
         // 写回文件
-        $content = "<?php\r\nreturn " . var_export($langConfig, true) . ";";
+        $content = "<?php\r\nreturn " . $this->exportArray($langConfig) . ";";
         file_put_contents($langFile, $content);
         
         $this->io->write("<info>✓ 已更新语言配置: $langFile</info>");
+    }
+    
+    /**
+     * 导出数组为 [] 格式的字符串
+     */
+    private function exportArray(array $array, int $indent = 0): string
+    {
+        $output = "[";
+        $indentStr = str_repeat('    ', $indent + 1);
+        $nextIndentStr = str_repeat('    ', $indent);
+        
+        $isAssoc = array_keys($array) !== range(0, count($array) - 1);
+        
+        foreach ($array as $key => $value) {
+            $output .= "\n" . $indentStr;
+            
+            if ($isAssoc) {
+                $output .= var_export($key, true) . " => ";
+            }
+            
+            if (is_array($value)) {
+                $output .= $this->exportArray($value, $indent + 1);
+            } else {
+                $output .= var_export($value, true);
+            }
+            
+            $output .= ",";
+        }
+        
+        $output .= "\n" . $nextIndentStr . "]";
+        
+        return $output;
     }
 
     /**
@@ -267,5 +283,17 @@ PHP;
     private function toCamelCase(string $string): string
     {
         return str_replace(' ', '', ucwords(str_replace('_', ' ', $string)));
+    }
+
+    /**
+     * 将驼峰命名转换为小写下划线命名
+     */
+    private function toSnakeCase(string $string): string
+    {
+        // 先处理连续大写字母（如 XMLParser -> xml_parser）
+        $result = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $string);
+        // 再处理普通驼峰（如 xmlParser -> xml_parser）
+        $result = preg_replace('/([a-z\d])([A-Z])/', '$1_$2', $result);
+        return strtolower($result);
     }
 }

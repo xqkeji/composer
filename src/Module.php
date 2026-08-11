@@ -20,44 +20,14 @@ class Module implements EventSubscriberInterface
     private IOInterface $io;
     private Composer $composer;
     private Filesystem $filesystem;
-    private ?string $currentModule = null;
+    private Context $context;
 
     public function __construct(IOInterface $io, Composer $composer)
     {
         $this->io = $io;
         $this->composer = $composer;
         $this->filesystem = new Filesystem();
-        $this->loadCurrentModule();
-    }
-
-    /**
-     * 加载当前模块
-     */
-    private function loadCurrentModule(): void
-    {
-        $configFile = self::getRuntimePath() . DIRECTORY_SEPARATOR . 'composer' . DIRECTORY_SEPARATOR . 'current_module.php';
-        if (is_file($configFile)) {
-            $config = include $configFile;
-            $this->currentModule = $config['module'] ?? null;
-        }
-    }
-
-    /**
-     * 保存当前模块
-     */
-    private function saveCurrentModule(string $moduleName): void
-    {
-        $configPath = self::getRuntimePath() . DIRECTORY_SEPARATOR . 'composer';
-        if (!is_dir($configPath)) {
-            mkdir($configPath, 0755, true);
-        }
-        
-        $configFile = $configPath . DIRECTORY_SEPARATOR . 'current_module.php';
-        $content = "<?php\r\nreturn " . var_export(['module' => $moduleName], true) . ';';
-        file_put_contents($configFile, $content);
-        
-        $this->currentModule = $moduleName;
-        $this->io->write("<info>✓ 当前模块已设置为: $moduleName</info>");
+        $this->context = new Context($io, $composer);
     }
 
     /**
@@ -75,12 +45,13 @@ class Module implements EventSubscriberInterface
      */
     private function getCurrentModulePath(): ?string
     {
-        if ($this->currentModule === null) {
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
             return null;
         }
         
         $rootPath = $this->getProjectRootPath();
-        $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $this->currentModule;
+        $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $currentModule;
         
         if (is_dir($modulePath)) {
             return $modulePath;
@@ -94,22 +65,7 @@ class Module implements EventSubscriberInterface
      */
     public function useModule(string $moduleName): void
     {
-        // 验证模块名称
-        if (!preg_match('/^[a-z][a-z0-9_]*$/', $moduleName)) {
-            $this->io->write('<error>模块名称格式无效</error>');
-            return;
-        }
-
-        // 检查模块是否存在
-        $rootPath = $this->getProjectRootPath();
-        $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
-        
-        if (!is_dir($modulePath)) {
-            $this->io->write("<error>模块 '$moduleName' 不存在: $modulePath</error>");
-            return;
-        }
-
-        $this->saveCurrentModule($moduleName);
+        $this->context->switchModule($moduleName);
     }
 
     /**
@@ -193,7 +149,7 @@ class Module implements EventSubscriberInterface
         $this->showGeneratedStructure($modulePath);
         
         // 自动设置为当前模块
-        $this->saveCurrentModule($moduleName);
+        $this->context->saveContext($moduleName);
     }
 
     /**
@@ -235,8 +191,18 @@ class Module implements EventSubscriberInterface
             return;
         }
 
+        // 检查父目录是否存在
+        if (!is_dir($localPath)) {
+            $this->io->write("<error>指定的本地路径不存在: $localPath</error>");
+            return;
+        }
+
         // 创建目录结构
-        mkdir($fullTargetPath, 0755, true);
+        if (!mkdir($fullTargetPath, 0755, true)) {
+            $this->io->write("<error>无法创建目录: $fullTargetPath</error>");
+            $this->io->write("<comment>请检查路径权限和磁盘空间</comment>");
+            return;
+        }
 
         // 使用 example/ 完整结构（包含 .gitignore、composer.json、LICENSE、README.md）
         $examplePath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'example';
@@ -263,8 +229,40 @@ class Module implements EventSubscriberInterface
         // 创建软链接到 vendor 目录
         $this->createSymlink($projectPath, $packageName, $fullTargetPath);
 
+        // 更新 config/composer.php 配置文件
+        $this->updateComposerConfig($projectPath, $moduleName, $packageName);
+
         // 自动设置为当前模块
-        $this->saveCurrentModule($moduleName);
+        $this->context->saveContext($moduleName);
+    }
+
+    /**
+     * 更新 config/composer.php 配置文件
+     */
+    private function updateComposerConfig(string $projectPath, string $moduleName, string $packageName): void
+    {
+        $configPath = $projectPath . DIRECTORY_SEPARATOR . 'config';
+        $configFile = $configPath . DIRECTORY_SEPARATOR . 'composer.php';
+
+        // 确保 config 目录存在
+        if (!is_dir($configPath)) {
+            mkdir($configPath, 0755, true);
+        }
+
+        // 读取现有配置或创建新配置
+        $config = [];
+        if (is_file($configFile)) {
+            $config = include $configFile;
+        }
+
+        // 添加模块映射
+        $config[$moduleName] = $packageName;
+
+        // 写入配置文件
+        $content = "<?php\r\nreturn " . self::exportArray($config) . ";";
+        file_put_contents($configFile, $content);
+
+        $this->io->write("<info>✓ 已更新 config/composer.php 配置</info>");
     }
 
     /**
@@ -428,6 +426,150 @@ class Module implements EventSubscriberInterface
         $this->io->write("<info>✓ 已更新项目的 composer.json，添加了 path repository</info>");
     }
 
+    /**
+     * 删除 composer 模块
+     */
+    public function removeModule(string $name, ?string $localPath = null, bool $deleteLocal = false): void
+    {
+        // 解析包名
+        $packageName = $name;
+        $moduleName = $name;
+        
+        if (strpos($name, '/') !== false) {
+            // 从包名提取模块名: xq-app-home -> home
+            $parts = explode('/', $name);
+            if (count($parts) === 2) {
+                $package = $parts[1];
+                if (strpos($package, 'xq-app-') === 0) {
+                    $moduleName = substr($package, 7);
+                } elseif (strpos($package, 'xq-com-') === 0) {
+                    $moduleName = substr($package, 7);
+                } else {
+                    $moduleName = $package;
+                }
+            }
+        }
+        
+        $projectPath = $this->getProjectRootPath();
+        
+        // 1. 清理项目 composer.json
+        $this->removeFromProjectComposerJson($projectPath, $packageName);
+        
+        // 2. 清理 config/composer.php
+        $this->removeFromComposerConfig($projectPath, $moduleName);
+        
+        // 3. 删除 vendor 中的软链接
+        $this->removeVendorSymlink($projectPath, $packageName);
+        
+        // 4. 如果需要删除本地目录
+        if ($deleteLocal && $localPath !== null && is_dir($localPath)) {
+            $this->filesystem->removeDirectory($localPath);
+            $this->io->write("<info>✓ 已删除本地包目录: $localPath</info>");
+        }
+        
+        $this->io->write("<info>✓ 模块 '$name' 已完整删除</info>");
+    }
+    
+    /**
+     * 从项目 composer.json 中移除包
+     */
+    private function removeFromProjectComposerJson(string $projectPath, string $packageName): void
+    {
+        $composerFile = $projectPath . DIRECTORY_SEPARATOR . 'composer.json';
+        
+        if (!is_file($composerFile)) {
+            return;
+        }
+        
+        $composerJson = json_decode(file_get_contents($composerFile), true);
+        if ($composerJson === null) {
+            return;
+        }
+        
+        // 移除 require
+        if (isset($composerJson['require'][$packageName])) {
+            unset($composerJson['require'][$packageName]);
+            $this->io->write("<info>✓ 已从 composer.json 移除 require: $packageName</info>");
+        }
+        
+        // 移除 path repository
+        if (isset($composerJson['repositories'])) {
+            $composerJson['repositories'] = array_values(array_filter(
+                $composerJson['repositories'],
+                function ($repo) use ($packageName) {
+                    // 保留非 path 类型的 repository
+                    if (!isset($repo['type']) || $repo['type'] !== 'path') {
+                        return true;
+                    }
+                    // 保留其他 path repository
+                    if (isset($repo['url'])) {
+                        $url = $repo['url'];
+                        // 检查是否是指向该包的 repository
+                        if (strpos($url, $packageName) !== false) {
+                            $this->io->write("<info>✓ 已从 composer.json 移除 repository: $url</info>");
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+            ));
+        }
+        
+        // 保存更新后的 composer.json
+        $jsonContent = json_encode($composerJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        file_put_contents($composerFile, $jsonContent);
+    }
+    
+    /**
+     * 从 config/composer.php 中移除模块映射
+     */
+    private function removeFromComposerConfig(string $projectPath, string $moduleName): void
+    {
+        $configFile = $projectPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'composer.php';
+        
+        if (!is_file($configFile)) {
+            return;
+        }
+        
+        $config = include $configFile;
+        
+        if (isset($config[$moduleName])) {
+            unset($config[$moduleName]);
+            
+            // 写入配置文件
+            $content = "<?php\r\nreturn " . self::exportArray($config) . ";";
+            file_put_contents($configFile, $content);
+            
+            $this->io->write("<info>✓ 已从 config/composer.php 移除模块: $moduleName</info>");
+        }
+    }
+    
+    /**
+     * 删除 vendor 中的软链接/junction
+     */
+    private function removeVendorSymlink(string $projectPath, string $packageName): void
+    {
+        $vendorPath = $projectPath . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
+        
+        if (!file_exists($vendorPath) && !is_link($vendorPath)) {
+            return;
+        }
+        
+        // Windows 上的 junction 用 rmdir 直接删除（不需要递归）
+        if (DIRECTORY_SEPARATOR === '\\') {
+            rmdir($vendorPath);
+        } else {
+            // Linux/Mac 使用 unlink 删除 symlink
+            if (is_link($vendorPath)) {
+                unlink($vendorPath);
+            } else {
+                $this->filesystem->removeDirectory($vendorPath);
+            }
+        }
+        
+        $this->io->write("<info>✓ 已删除 vendor 目录: $vendorPath</info>");
+    }
+    
     /**
      * 递归复制目录
      */

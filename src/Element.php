@@ -38,8 +38,11 @@ class Element
      * 创建元素（公开方法）
      * @param string $elementName 元素名称
      * @param string|null $specifiedType 指定类型（null=默认类型，''=交互选择，string=指定类型）
+     * @param string|null $items 项目列表（null=无，''=交互输入，string=值1|文本1,值2|文本2）
+     * @param string|null $defaultValue 默认值（null=无，''=交互输入，string=默认值）
+     * @param string|null $modelName 模型名（null=无，''=交互输入，string=模型名）
      */
-    public function createElement(string $elementName, ?string $specifiedType = null): void
+    public function createElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null): void
     {
         // 验证元素名称
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elementName)) {
@@ -105,10 +108,24 @@ class Element
         // 交互式询问中文名称
         $elementText = $this->askElementText($configName, $className);
 
+        // 解析模型名（Select/Check/Radio/SelectPicker）
+        $modelInfo = $this->resolveModel($modelName, $elementType);
+
+        // 如果指定了模型，则不使用 items 属性（由 beforeRender 方法动态加载）
+        if ($modelInfo !== null) {
+            $parsedItems = null;
+        } else {
+            // 解析项目列表（Select/Check/Radio）
+            $parsedItems = $this->resolveItems($items, $elementType);
+        }
+
+        // 解析默认值
+        $parsedDefault = $this->resolveDefaultValue($defaultValue);
+
         // 生成并写入
         $useBaseClass = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . $elementType;
         $namespace = $this->getElementNamespace($currentModule, $currentMode);
-        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode);
+        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo);
         file_put_contents($filePath, $content);
 
         $this->io->write("<info>✓ {$modeLabel}元素已创建: $filePath</info>");
@@ -119,8 +136,11 @@ class Element
      * 修改元素（公开方法）
      * @param string $elementName 元素名称
      * @param string|null $specifiedType 指定类型（null=默认类型，''=交互选择，string=指定类型）
+     * @param string|null $items 项目列表
+     * @param string|null $defaultValue 默认值
+     * @param string|null $modelName 模型名
      */
-    public function editElement(string $elementName, ?string $specifiedType = null): void
+    public function editElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null): void
     {
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elementName)) {
             $this->io->write('<error>元素名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
@@ -175,9 +195,22 @@ class Element
         // 交互式询问中文名称
         $elementText = $this->askElementText($configName, $className);
 
+        // 解析模型名
+        $modelInfo = $this->resolveModel($modelName, $elementType);
+
+        // 如果指定了模型，则不使用 items 属性
+        if ($modelInfo !== null) {
+            $parsedItems = null;
+        } else {
+            $parsedItems = $this->resolveItems($items, $elementType);
+        }
+
+        // 解析默认值
+        $parsedDefault = $this->resolveDefaultValue($defaultValue);
+
         $useBaseClass = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . $elementType;
         $namespace = $this->getElementNamespace($currentModule, $currentMode);
-        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode);
+        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo);
         file_put_contents($filePath, $content);
 
         $this->io->write("<info>✓ {$modeLabel}元素已修改: $filePath</info>");
@@ -284,13 +317,14 @@ class Element
             return $defaultType;
         }
 
-        // 指定了类型：验证是否在列表中
+        // 指定了类型：先转为大驼峰，再验证是否在列表中
         if ($specifiedType !== null) {
-            if (!in_array($specifiedType, $types)) {
+            $normalizedType = $this->toCamelCase($specifiedType);
+            if (!in_array($normalizedType, $types)) {
                 $this->io->write("<error>无效的类型 '{$specifiedType}'，可选类型：" . implode(', ', $types) . "</error>");
                 return null;
             }
-            return $specifiedType;
+            return $normalizedType;
         }
 
         // 默认类型
@@ -326,14 +360,247 @@ class Element
     /**
      * 生成元素类内容
      */
-    private function generateElementContent(string $namespace, string $className, string $configName, string $elementText, string $baseClass, string $useBaseClass, string $mode): string
+    private function generateElementContent(string $namespace, string $className, string $configName, string $elementText, string $baseClass, string $useBaseClass, string $mode, ?array $items = null, ?string $defaultValue = null, ?array $modelInfo = null): string
     {
         if ($mode === 'form') {
-            return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '@row';\n}\n";
+            // 根据类型确定 attrs
+            $attrs = $this->buildFormAttrs($baseClass);
+
+            // 构建 items 属性（无模型时）
+            $itemsStr = '';
+            if ($items !== null && $modelInfo === null && in_array($baseClass, ['Select', 'Check', 'Radio', 'SelectPicker'])) {
+                $itemsStr = $this->buildItemsProperty($items);
+            }
+
+            // 构建 defaultValue 属性
+            $defaultStr = '';
+            if ($defaultValue !== null) {
+                $escapedDefault = str_replace("'", "\\'", $defaultValue);
+                $defaultStr = "\n    protected \$defaultValue = '{$escapedDefault}';";
+            }
+
+            // 构建 template 属性
+            $templateStr = '';
+            if (in_array($baseClass, ['Check', 'Radio'])) {
+                $templateStr = "\n    protected \$template = '@check';";
+            } else {
+                $templateStr = "\n    protected \$template = '@row';";
+            }
+
+            // 构建 beforeRender 方法（有模型时）
+            $beforeRenderStr = '';
+            if ($modelInfo !== null) {
+                $beforeRenderStr = $this->buildBeforeRenderMethod($modelInfo);
+            }
+
+            return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = {$attrs};{$itemsStr}{$defaultStr}{$templateStr}{$beforeRenderStr}\n}\n";
         } else {
             $useModel = 'xqkeji' . '\\' . 'mvc' . '\\' . 'builder' . '\\' . 'Model';
             return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\nuse {$useModel};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'style' => 'min-width:200px;',\n    ];\n}\n";
         }
+    }
+
+    /**
+     * 构建 beforeRender 方法（从模型动态加载项目列表）
+     */
+    private function buildBeforeRenderMethod(array $modelInfo): string
+    {
+        $modelName = $modelInfo['name'];
+        $keyField = $modelInfo['keyField'];
+        $valueField = $modelInfo['valueField'];
+
+        // 下标字段为 id 或 _id 时使用 getKey()，否则使用 getAttr
+        if ($keyField === 'id' || $keyField === '_id') {
+            $keyExpr = '(string)$item->getKey()';
+        } else {
+            $keyExpr = "\$item->getAttr('{$keyField}')";
+        }
+
+        return "\n    public function beforeRender()\n    {\n        \$model=\\xqkeji\\mvc\\builder\\Model::getModel('{$modelName}');\n        \$type=\$model->where('status',1)->order('ordernum')->select();\n        \$items=\$type->all();\n        \$rows=[];\n        if(!empty(\$items))\n        {\n            foreach(\$items as \$item)\n            {\n                \$key={$keyExpr};\n                \$val=\$item->getAttr('{$valueField}');\n                \$rows[\$key]=\$val;\n            }\n        }\n        \$this->setItems(\$rows);\n    }";
+    }
+
+    /**
+     * 根据类型构建表单 attrs
+     */
+    private function buildFormAttrs(string $baseClass): string
+    {
+        if ($baseClass === 'Select' || $baseClass === 'SelectPicker') {
+            return "[\n        'class' => 'form-select',\n    ]";
+        }
+        return "[\n        'required' => 'true',\n        'class' => 'form-control',\n    ]";
+    }
+
+    /**
+     * 构建 items 属性字符串
+     */
+    private function buildItemsProperty(array $items): string
+    {
+        $lines = [];
+        foreach ($items as $value => $text) {
+            $escapedValue = str_replace("'", "\\'", $value);
+            $escapedText = str_replace("'", "\\'", $text);
+            $lines[] = "        '{$escapedValue}' => '{$escapedText}'";
+        }
+        $itemsContent = implode(",\n", $lines);
+        return "\n    protected \$items = [\n{$itemsContent},\n    ];";
+    }
+
+    /**
+     * 解析项目列表
+     * @param string|null $items null=无，''=交互输入，string=值1|文本1,值2|文本2
+     * @param string $elementType 元素类型
+     * @return array|null 解析后的 [值 => 文本] 数组，或 null
+     */
+    private function resolveItems(?string $items, string $elementType): ?array
+    {
+        // 只有 Select/Check/Radio/SelectPicker 类型支持 items
+        if (!in_array($elementType, ['Select', 'Check', 'Radio', 'SelectPicker'])) {
+            return null;
+        }
+
+        // 空字符串：交互输入
+        if ($items === '') {
+            if (!$this->io->isInteractive()) {
+                $this->io->write('<comment>交互模式不可用，跳过项目列表设置</comment>');
+                return null;
+            }
+
+            $this->io->write('<info>请输入项目列表（格式：值|文本 或 值=文本，每行一个，空行结束）：</info>');
+            $result = [];
+            while (true) {
+                $line = $this->io->ask('<question>  项目（值|文本 或 值=文本）:</question> ', '');
+                if (trim($line) === '') {
+                    break;
+                }
+                // 支持 | 或 = 作为分隔符
+                if (strpos($line, '|') !== false) {
+                    $parts = explode('|', $line, 2);
+                } elseif (strpos($line, '=') !== false) {
+                    $parts = explode('=', $line, 2);
+                } else {
+                    $this->io->write("<comment>  格式无效，请使用 值|文本 或 值=文本 格式</comment>");
+                    continue;
+                }
+                if (count($parts) === 2) {
+                    $result[trim($parts[0])] = trim($parts[1]);
+                } else {
+                    $this->io->write("<comment>  格式无效，请使用 值|文本 或 值=文本 格式</comment>");
+                }
+            }
+
+            if (empty($result)) {
+                $this->io->write('<comment>未输入项目，跳过</comment>');
+                return null;
+            }
+            return $result;
+        }
+
+        // 指定了值：解析 "值1|文本1,值2|文本2" 或 "值1=文本1,值2=文本2"
+        if ($items !== null) {
+            $result = [];
+            $pairs = explode(',', $items);
+            foreach ($pairs as $pair) {
+                $pair = trim($pair);
+                // 支持 | 或 = 作为分隔符
+                if (strpos($pair, '|') !== false) {
+                    $parts = explode('|', $pair, 2);
+                } elseif (strpos($pair, '=') !== false) {
+                    $parts = explode('=', $pair, 2);
+                } else {
+                    continue;
+                }
+                if (count($parts) === 2) {
+                    $result[trim($parts[0])] = trim($parts[1]);
+                }
+            }
+            if (empty($result)) {
+                $this->io->write("<error>项目列表格式无效，请使用：值1|文本1,值2|文本2 或 值1=文本1,值2=文本2</error>");
+                return null;
+            }
+            return $result;
+        }
+
+        return null;
+    }
+
+    /**
+     * 解析默认值
+     * @param string|null $defaultValue null=无，''=交互输入，string=默认值
+     * @return string|null
+     */
+    private function resolveDefaultValue(?string $defaultValue): ?string
+    {
+        // 空字符串：交互输入
+        if ($defaultValue === '') {
+            if (!$this->io->isInteractive()) {
+                return null;
+            }
+            return $this->io->ask(
+                "<question>请输入默认值（留空不设置）:</question> ",
+                ''
+            ) ?: null;
+        }
+
+        return $defaultValue;
+    }
+
+    /**
+     * 解析模型名（Select/Check/Radio/SelectPicker）
+     * @param string|null $modelName null=无模型，''=交互输入，string=模型名
+     * @param string $elementType 元素类型
+     * @return array|null ['name' => 模型名, 'keyField' => 键字段, 'valueField' => 值字段] 或 null
+     */
+    private function resolveModel(?string $modelName, string $elementType): ?array
+    {
+        // 只有 Select/Check/Radio/SelectPicker 类型支持模型
+        if (!in_array($elementType, ['Select', 'Check', 'Radio', 'SelectPicker'])) {
+            if ($modelName !== null) {
+                $this->io->write("<comment>模型参数仅支持 Select/Check/Radio/SelectPicker 类型，已忽略</comment>");
+            }
+            return null;
+        }
+
+        // 空字符串：交互输入
+        if ($modelName === '') {
+            if (!$this->io->isInteractive()) {
+                $this->io->write('<comment>交互模式不可用，跳过模型设置</comment>');
+                return null;
+            }
+
+            $modelName = $this->io->ask(
+                "<question>请输入模型名称（留空不设置）:</question> ",
+                ''
+            );
+
+            if (empty($modelName)) {
+                return null;
+            }
+        }
+
+        // 未指定模型
+        if ($modelName === null) {
+            return null;
+        }
+
+        // 转换为大驼峰
+        $modelName = $this->toCamelCase($modelName);
+
+        // 交互询问字段名
+        $keyField = $this->io->ask(
+            "<question>请输入列表项下标字段名（默认 'id'）:</question> ",
+            'id'
+        );
+
+        $valueField = $this->io->ask(
+            "<question>请输入列表项值字段名（默认 'name'）:</question> ",
+            'name'
+        );
+
+        return [
+            'name' => $modelName,
+            'keyField' => $keyField ?: 'id',
+            'valueField' => $valueField ?: 'name',
+        ];
     }
 
     /**

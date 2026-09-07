@@ -203,32 +203,36 @@ PHP;
             $this->io->write('<comment>⚠ 菜单配置顶层存在 ' . count($strayKeys) . ' 个非法数字键项（旧版本写入），建议手动清理</comment>');
         }
         
-        // 定位 children：扁平结构直接挂在根，分组结构挂在对应入口分组下
+        // 兼容旧版扁平结构：['title' => ..., 'children' => [...]] 迁移为按入口分组
         if (isset($menuConfig['children']) && is_array($menuConfig['children'])) {
-            // 扁平结构：['title' => ..., 'children' => [...]]
-            if ($this->hasMenuUrl($menuConfig['children'], $menuItem['url'])) {
-                $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
-                return;
-            }
-            $menuConfig['children'][] = $menuItem;
-        } else {
-            // 分组结构：['admin' => ['title' => ..., 'children' => [...]], ...]
-            $groupKey = $authEntry;
-            if (!isset($menuConfig[$groupKey]) || !is_array($menuConfig[$groupKey])) {
-                $menuConfig[$groupKey] = [
-                    'title' => $this->getMenuGroupTitle($groupKey),
-                    'children' => [],
-                ];
-            }
-            if (!isset($menuConfig[$groupKey]['children']) || !is_array($menuConfig[$groupKey]['children'])) {
-                $menuConfig[$groupKey]['children'] = [];
-            }
-            if ($this->hasMenuUrl($menuConfig[$groupKey]['children'], $menuItem['url'])) {
-                $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
-                return;
-            }
-            $menuConfig[$groupKey]['children'][] = $menuItem;
+            $legacyTitle = (isset($menuConfig['title']) && is_string($menuConfig['title']) && $menuConfig['title'] !== '')
+                ? $menuConfig['title']
+                : $this->getMenuGroupTitle($authEntry);
+            $menuConfig = [
+                $authEntry => [
+                    'title' => $legacyTitle,
+                    'children' => $menuConfig['children'],
+                ],
+            ];
+            $this->io->write("<comment>↻ 扁平菜单已迁移为入口分组结构: {$authEntry}</comment>");
         }
+        
+        // 定位 children：按入口分组，如 ['admin' => ['title' => ..., 'children' => [...]]]
+        $groupKey = $authEntry;
+        if (!isset($menuConfig[$groupKey]) || !is_array($menuConfig[$groupKey])) {
+            $menuConfig[$groupKey] = [
+                'title' => $this->getMenuGroupTitle($groupKey),
+                'children' => [],
+            ];
+        }
+        if (!isset($menuConfig[$groupKey]['children']) || !is_array($menuConfig[$groupKey]['children'])) {
+            $menuConfig[$groupKey]['children'] = [];
+        }
+        if ($this->hasMenuUrl($menuConfig[$groupKey]['children'], $menuItem['url'])) {
+            $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
+            return;
+        }
+        $menuConfig[$groupKey]['children'][] = $menuItem;
         
         // 写回文件
         $content = "<?php\r\nreturn " . $this->exportArray($menuConfig) . ";";

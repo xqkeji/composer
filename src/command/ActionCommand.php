@@ -4,8 +4,10 @@ namespace xqkeji\composer\command;
 use Composer\Command\BaseCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use xqkeji\composer\Context;
+use xqkeji\composer\Lang;
 
 class ActionCommand extends BaseCommand
 {
@@ -25,6 +27,7 @@ class ActionCommand extends BaseCommand
         $this->setName('xqkeji:action')
             ->setDescription('创建动作类')
             ->addArgument('name', InputArgument::REQUIRED, '动作名（如 Add、b_close、change_password）')
+            ->addOption('title', 't', InputOption::VALUE_REQUIRED, '动作中文名称（写入语言文件，如：批量删除）')
             ->setHelp(<<<'EOF'
 创建动作类文件
 
@@ -38,14 +41,22 @@ class ActionCommand extends BaseCommand
   composer xqkeji:action Add
   composer xqkeji:action Delete
   composer xqkeji:action b_close
-  composer xqkeji:action change_password
 
-<info>预定义动作列表：</info>
+  <comment># 指定中文名称，写入 lang/zh-cn.php</comment>
+  composer xqkeji:action b_close -t 批量关闭
 
-  Add, Admin, Captcha, Change, Delete, Display, Edit, Emailcode,
-  Export, Getoption, Login, Logout, Publish, Reg, Reset, Submenu,
-  Subnode, b_close, b_delete, b_open, b_order,
-  change_password, update_config, update_statics
+<info>选项：</info>
+
+  <comment>-t, --title=TITLE</comment>  动作中文名称，写入语言文件的 title/success/failed/auth 键
+
+<info>预定义动作列表及中文名：</info>
+
+  Add 添加, Admin 管理, Captcha 验证码, Change 修改, Delete 删除, Display 查看,
+  Edit 编辑, Emailcode 邮箱验证码, Export 导出, Getoption 获取选项, Login 登录,
+  Logout 退出登录, Publish 发布, Reg 注册, Reset 重置, Submenu 子菜单,
+  Subnode 子节点, b_close 批量禁用, b_delete 批量删除, b_open 批量启用,
+  b_order 批量排序, change_password 修改密码, update_config 更新配置,
+  update_statics 更新静态文件
 
 <info>说明：</info>
 
@@ -140,6 +151,20 @@ EOF
         file_put_contents($filePath, $content);
         $output->writeln("<info>✓ 动作类已创建: $filePath</info>");
 
+        // 写入语言配置（中文名称）
+        $controllerName = $this->toSnakeCase($currentController);
+        $controllerTitle = Lang::readControllerTitle($modulePath, $currentModule, $controllerName);
+        $title = $input->getOption('title');
+        Lang::writeActions(
+            $this->getIO(),
+            $modulePath,
+            $currentModule,
+            $controllerName,
+            [$actionName],
+            $controllerTitle,
+            ($title !== null && $title !== '') ? [$actionName => $title] : []
+        );
+
         return 0;
     }
 
@@ -193,5 +218,15 @@ PHP;
     private function toCamelCase(string $string): string
     {
         return str_replace(' ', '', ucwords(str_replace('_', ' ', $string)));
+    }
+
+    /**
+     * 将驼峰命名转换为小写下划线命名
+     */
+    private function toSnakeCase(string $string): string
+    {
+        $result = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $string);
+        $result = preg_replace('/([a-z\d])([A-Z])/', '$1_$2', $result);
+        return strtolower($result);
     }
 }

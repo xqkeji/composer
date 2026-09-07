@@ -16,6 +16,7 @@ class ModuleCommand extends BaseCommand
             ->setDescription('创建模块')
             ->addArgument('name', InputArgument::OPTIONAL, '模块名称或包名 (如: home 或 xqkeji/xq-app-home)')
             ->addOption('path', 'p', InputOption::VALUE_REQUIRED, '本地路径（创建 composer 包模块时必须指定）')
+            ->addOption('title', 't', InputOption::VALUE_REQUIRED, '模块中文名称（写入菜单与语言文件）')
             ->setHelp(<<<'EOF'
 创建新模块
 
@@ -29,8 +30,16 @@ class ModuleCommand extends BaseCommand
   composer xqkeji:module xqkeji/xq-app-home -path=F:/docker/code/php/
   composer xqkeji:module xqkeji/xq-app-home -p=F:/docker/code/php/
 
+  <comment># 指定模块中文名：菜单与语言文件写入「教学管理」</comment>
+  composer xqkeji:module xqkeji/xq-app-edu -p F:/docker/code/php/ -t 教学
+
   <comment># 选项可以放在任意位置</comment>
   composer xqkeji:module --path=F:/docker/code/php/ xqkeji/xq-app-home
+
+<info>选项：</info>
+
+  <comment>-p, --path=PATH</comment>    本地路径（创建 composer 包模块时必须指定）
+  <comment>-t, --title=TITLE</comment>  模块中文名称，写入 menu.php 与 lang/zh-cn.php
 
 <info>说明：</info>
 
@@ -89,7 +98,7 @@ EOF
         }
         
         $module = new Module($this->getIO(), $this->requireComposer());
-        $module->createModule($name, $path);
+        $module->createModule($name, $path, $input->getOption('title'));
         
         return 0;
     }

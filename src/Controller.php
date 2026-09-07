@@ -33,7 +33,7 @@ class Controller
     /**
      * 创建控制器（公开方法）
      */
-    public function createController(string $controllerName, string $authEntry = 'guest', string $authType = 'auth', array $actions = [], bool $createFile = false): void
+    public function createController(string $controllerName, string $authEntry = 'admin', string $authType = 'auth', array $actions = [], bool $createFile = false, ?string $title = null): void
     {
         // 验证控制器名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $controllerName)) {
@@ -65,6 +65,9 @@ class Controller
         if (empty($actions)) {
             $actions = $authEntry === 'guest' ? self::DEFAULT_GUEST_ACTIONS : self::DEFAULT_ACTIONS;
         }
+        
+        // 中文名称（用于菜单与语言文件），未指定时回退为大驼峰类名
+        $controllerTitle = ($title !== null && $title !== '') ? $title : $this->toCamelCase($controllerName);
 
         // 创建控制器类（低代码默认使用虚拟控制器，仅 --file 时才生成实体文件）
         if ($createFile) {
@@ -78,8 +81,8 @@ class Controller
         if ($authEntry === 'admin') {
             // admin 入口：更新 ACL、menu 和 lang
             $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
-            $this->updateMenuConfig($modulePath, $configName, $authEntry);
-            $this->updateLangConfig($modulePath, $configName, $actions);
+            $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle);
+            Lang::writeActions($this->io, $modulePath, $currentModule, $configName, $actions, $controllerTitle);
         } else {
             // guest 及自定义入口（member、teacher 等）：只更新 ACL，不处理 menu 和 lang
             $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
@@ -173,7 +176,7 @@ PHP;
     /**
      * 更新菜单配置
      */
-    private function updateMenuConfig(string $modulePath, string $controllerName, string $authEntry): void
+    private function updateMenuConfig(string $modulePath, string $controllerName, string $authEntry, string $controllerTitle = ''): void
     {
         $menuFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'menu.php';
         
@@ -189,11 +192,12 @@ PHP;
         }
         
         $className = $this->toCamelCase($controllerName);
+        $subject = $controllerTitle !== '' ? $controllerTitle : $className;
         
         // 菜单项结构：url 为 控制器/动作（模块前缀由框架按模块自动补全）
         $menuItem = [
             'url' => "{$controllerName}/admin",
-            'title' => "{$className}管理",
+            'title' => "{$subject}管理",
             'icon' => 'bi bi-list',
         ];
         
@@ -266,55 +270,6 @@ PHP;
         return $titles[$groupKey] ?? ($this->toCamelCase($groupKey) . '管理');
     }
 
-    /**
-     * 更新语言配置
-     */
-    private function updateLangConfig(string $modulePath, string $controllerName, array $actions): void
-    {
-        $langFile = $modulePath . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . 'zh-cn.php';
-        
-        if (!is_file($langFile)) {
-            $this->io->write("<comment>⚠ 语言配置文件不存在: $langFile</comment>");
-            return;
-        }
-
-        // 读取现有配置
-        $langConfig = include $langFile;
-        
-        $className = $this->toCamelCase($controllerName);
-        $currentModule = $this->context->getCurrentModule();
-        $prefix = "{$currentModule} {$controllerName}";
-        
-        // 添加语言配置
-        foreach ($actions as $action) {
-            $actionClass = $this->toCamelCase($action);
-            
-            // 动作标题
-            $langConfig["{$prefix} {$action} title"] = "{$actionClass}{$className}";
-            
-            // 成功/失败消息
-            if (in_array($action, ['add', 'edit'])) {
-                $langConfig["{$prefix} {$action} success"] = "{$actionClass}{$className}成功";
-                $langConfig["{$prefix} {$action} failed"] = "{$actionClass}{$className}失败";
-            } elseif (in_array($action, ['delete', 'change', 'b_delete'])) {
-                $langConfig["{$prefix} {$action} success"] = "{$actionClass}{$className}成功";
-                $langConfig["{$prefix} {$action} failed"] = "{$actionClass}{$className}失败";
-            }
-            
-            // 权限描述
-            $langConfig["{$currentModule} module {$controllerName} {$action} auth"] = "{$actionClass}{$className}";
-        }
-        
-        // 模块权限描述
-        $langConfig["{$currentModule} module {$controllerName} auth"] = "{$className}管理";
-        
-        // 写回文件
-        $content = "<?php\r\nreturn " . $this->exportArray($langConfig) . ";";
-        file_put_contents($langFile, $content);
-        
-        $this->io->write("<info>✓ 已更新语言配置: $langFile</info>");
-    }
-    
     /**
      * 导出数组为 [] 格式的字符串
      */

@@ -71,15 +71,15 @@ class Module implements EventSubscriberInterface
     /**
      * 创建模块（公开方法）
      */
-    public function createModule(string $name, ?string $targetPath = null): void
+    public function createModule(string $name, ?string $targetPath = null, ?string $title = null): void
     {
         // 判断模式
         if (strpos($name, '/') !== false) {
             // composer 包模式
-            $this->createComposerModule($name, $targetPath);
+            $this->createComposerModule($name, $targetPath, $title);
         } else {
             // 本地模块模式
-            $this->createLocalModule($name);
+            $this->createLocalModule($name, $title);
         }
     }
 
@@ -110,7 +110,7 @@ class Module implements EventSubscriberInterface
     /**
      * 创建本地模块到 app/ 目录
      */
-    private function createLocalModule(string $moduleName): void
+    private function createLocalModule(string $moduleName, ?string $title = null): void
     {
         // 验证模块名称
         if (!preg_match('/^[a-z][a-z0-9_]*$/', $moduleName)) {
@@ -145,6 +145,9 @@ class Module implements EventSubscriberInterface
 
         $this->copyDirectory($exampleSrcPath, $modulePath, $moduleName);
         
+        // 写入中文模块名称（菜单与语言文件）
+        $this->updateModuleTitle($modulePath, $moduleName, $title);
+        
         $this->io->write("<info>✓ 模块 '$moduleName' 已成功创建: $modulePath</info>");
         $this->showGeneratedStructure($modulePath);
         
@@ -155,7 +158,7 @@ class Module implements EventSubscriberInterface
     /**
      * 创建 composer 包模块
      */
-    private function createComposerModule(string $packageName, ?string $targetPath = null): void
+    private function createComposerModule(string $packageName, ?string $targetPath = null, ?string $title = null): void
     {
         // 解析包名: xqkeji/xq-app-home
         $parts = explode('/', $packageName);
@@ -217,6 +220,9 @@ class Module implements EventSubscriberInterface
         // 更新包的 composer.json
         $this->updatePackageComposerJson($fullTargetPath, $packageName, $moduleName);
 
+        // 写入中文模块名称（菜单与语言文件）
+        $this->updateModuleTitle($fullTargetPath . DIRECTORY_SEPARATOR . 'src', $moduleName, $title);
+
         // 获取当前项目的根目录（通过 Composer）
         $projectPath = $this->getProjectRootPath();
 
@@ -263,6 +269,43 @@ class Module implements EventSubscriberInterface
         file_put_contents($configFile, $content);
 
         $this->io->write("<info>✓ 已更新 config/composer.php 配置</info>");
+    }
+
+    /**
+     * 写入模块中文名称到 menu.php 与 lang/zh-cn.php
+     *
+     * 传入的中文名作为模块主体名，菜单与语言文件中统一显示为「{中文名}管理」
+     */
+    private function updateModuleTitle(string $modulePath, string $moduleName, ?string $title): void
+    {
+        if ($title === null || $title === '') {
+            return;
+        }
+
+        $menuFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'menu.php';
+        if (is_file($menuFile)) {
+            $menuConfig = include $menuFile;
+            if (is_array($menuConfig)) {
+                $menuTitle = $this->appendManage($title);
+                foreach (array_keys($menuConfig) as $entry) {
+                    if (is_array($menuConfig[$entry])) {
+                        $menuConfig[$entry]['title'] = $menuTitle;
+                    }
+                }
+                file_put_contents($menuFile, "<?php\r\nreturn " . self::exportArray($menuConfig) . ";");
+                $this->io->write("<info>✓ 已更新菜单配置（模块名称）: $menuFile</info>");
+            }
+        }
+
+        Lang::writeModule($this->io, $modulePath, $moduleName, $this->appendManage($title));
+    }
+
+    /**
+     * 中文名后补「管理」后缀（已有则不重复添加）
+     */
+    private function appendManage(string $title): string
+    {
+        return str_ends_with($title, '管理') ? $title : ($title . '管理');
     }
 
     /**

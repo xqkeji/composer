@@ -4,6 +4,7 @@ namespace xqkeji\composer\command;
 use Composer\Command\BaseCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use xqkeji\composer\Controller;
 
@@ -16,13 +17,14 @@ class ControllerCommand extends BaseCommand
             ->addArgument('name', InputArgument::OPTIONAL, '控制器名称')
             ->addArgument('auth_entry', InputArgument::OPTIONAL, '权限入口（默认 guest）', 'guest')
             ->addArgument('auth_type', InputArgument::OPTIONAL, '权限类型：auth（需要授权）或 login（需要登录），仅非 guest 入口有效（默认 auth）', 'auth')
-            ->addArgument('actions', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '动作列表（默认为空）', [])
+            ->addArgument('actions', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '动作列表（admin 等入口默认：admin, add, edit, delete, change, b_delete；guest 默认：index）', [])
+            ->addOption('file', 'f', InputOption::VALUE_NONE, '创建控制器实体文件（默认不创建，使用虚拟控制器）')
             ->setHelp(<<<'EOF'
 创建控制器并配置权限、菜单和语言
 
 <info>用法示例：</info>
 
-  <comment># 创建控制器（guest 入口，默认 index 动作）</comment>
+  <comment># 创建控制器（guest 入口，默认 index 动作，使用虚拟控制器）</comment>
   composer xqkeji:controller home
 
   <comment># 创建控制器（admin 入口，默认动作：admin, add, edit, delete, change, b_delete）</comment>
@@ -30,6 +32,9 @@ class ControllerCommand extends BaseCommand
 
   <comment># 创建控制器（admin 入口，指定动作）</comment>
   composer xqkeji:controller customer_type admin auth admin add edit
+
+  <comment># 同时生成控制器实体文件（低代码默认走虚拟控制器，不需要实体文件）</comment>
+  composer xqkeji:controller term admin --file
 
   <comment># 创建控制器（member 入口，login 类型）</comment>
   composer xqkeji:controller profile member login edit update
@@ -42,7 +47,11 @@ class ControllerCommand extends BaseCommand
   <comment>name</comment>        控制器名称（支持大小写，自动转为大驼峰，如 Home、user_type、UserType）
   <comment>auth_entry</comment>  权限入口：guest（访客）、admin（管理员）、member（会员）或自定义
   <comment>auth_type</comment>   权限类型：auth（需要授权）或 login（需要登录），guest 入口忽略此参数
-  <comment>actions</comment>     动作列表，可指定多个
+  <comment>actions</comment>     动作列表，可指定多个，不指定时使用默认动作列表
+
+<info>选项说明：</info>
+
+  <comment>-f, --file</comment>  是否生成控制器实体文件（默认否，交由虚拟控制器处理）
 
 <info>权限规则：</info>
 
@@ -70,6 +79,7 @@ EOF
         $authEntry = $input->getArgument('auth_entry');
         $authType = $input->getArgument('auth_type');
         $actions = $input->getArgument('actions');
+        $createFile = (bool) $input->getOption('file');
         
         // 验证 auth_type
         if (!in_array($authType, ['auth', 'login'])) {
@@ -77,7 +87,7 @@ EOF
             return 1;
         }
         
-        $controller->createController($name, $authEntry, $authType, $actions);
+        $controller->createController($name, $authEntry, $authType, $actions, $createFile);
         
         return 0;
     }

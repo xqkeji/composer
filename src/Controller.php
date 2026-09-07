@@ -9,6 +9,16 @@ class Controller
 {
     use PathTrait;
 
+    /**
+     * 默认动作列表（非 guest 入口且未指定动作时使用）
+     */
+    private const DEFAULT_ACTIONS = ['admin', 'add', 'edit', 'delete', 'change', 'b_delete'];
+
+    /**
+     * guest 入口的默认动作列表
+     */
+    private const DEFAULT_GUEST_ACTIONS = ['index'];
+
     private IOInterface $io;
     private Composer $composer;
     private Context $context;
@@ -23,7 +33,7 @@ class Controller
     /**
      * 创建控制器（公开方法）
      */
-    public function createController(string $controllerName, string $authEntry = 'guest', string $authType = 'auth', array $actions = []): void
+    public function createController(string $controllerName, string $authEntry = 'guest', string $authType = 'auth', array $actions = [], bool $createFile = false): void
     {
         // 验证控制器名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $controllerName)) {
@@ -51,9 +61,18 @@ class Controller
             return;
         }
 
-        // 创建控制器类
-        $controllerPath = $modulePath . DIRECTORY_SEPARATOR . 'controller';
-        $this->createControllerFile($controllerPath, $controllerName);
+        // 未指定动作时使用默认动作列表（统一在入口处解析，保证 ACL / menu / lang 一致）
+        if (empty($actions)) {
+            $actions = $authEntry === 'guest' ? self::DEFAULT_GUEST_ACTIONS : self::DEFAULT_ACTIONS;
+        }
+
+        // 创建控制器类（低代码默认使用虚拟控制器，仅 --file 时才生成实体文件）
+        if ($createFile) {
+            $controllerPath = $modulePath . DIRECTORY_SEPARATOR . 'controller';
+            $this->createControllerFile($controllerPath, $controllerName);
+        } else {
+            $this->io->write('<comment>⊘ 未创建控制器文件（使用虚拟控制器），如需实体文件请加 -f/--file</comment>');
+        }
 
         // 根据权限入口类型处理配置（配置文件中使用小写下划线名称）
         if ($authEntry === 'admin') {
@@ -61,14 +80,8 @@ class Controller
             $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
             $this->updateMenuConfig($modulePath, $configName, $authEntry);
             $this->updateLangConfig($modulePath, $configName, $actions);
-        } elseif ($authEntry === 'guest') {
-            // guest 入口：更新 ACL（默认 index 动作），不处理 menu 和 lang
-            if (empty($actions)) {
-                $actions = ['index'];
-            }
-            $this->updateAclConfig($modulePath, $authEntry, $configName, $actions);
         } else {
-            // 其他入口（如 member、teacher 等）：只更新 ACL，不处理 menu 和 lang
+            // guest 及自定义入口（member、teacher 等）：只更新 ACL，不处理 menu 和 lang
             $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
         }
     }
@@ -171,24 +184,82 @@ PHP;
 
         // 读取现有配置
         $menuConfig = include $menuFile;
+        if (!is_array($menuConfig)) {
+            $menuConfig = [];
+        }
         
-        // 添加菜单项
         $className = $this->toCamelCase($controllerName);
-        $currentModule = $this->context->getCurrentModule();
-        $menuConfig[] = [
-            'name' => "{$currentModule}.{$controllerName}.admin",
+        
+        // 菜单项结构：url 为 控制器/动作（模块前缀由框架按模块自动补全）
+        $menuItem = [
+            'url' => "{$controllerName}/admin",
             'title' => "{$className}管理",
-            'url' => "{$currentModule}/{$controllerName}/admin",
-            'icon' => 'list',
-            'sort' => 0,
-            'auth' => $authEntry !== 'guest'
+            'icon' => 'bi bi-list',
         ];
+        
+        // 检测顶层遗留的非法数字键（旧版本错误写入的菜单项），仅提示不自动删除
+        $strayKeys = array_filter(array_keys($menuConfig), 'is_int');
+        if (!empty($strayKeys)) {
+            $this->io->write('<comment>⚠ 菜单配置顶层存在 ' . count($strayKeys) . ' 个非法数字键项（旧版本写入），建议手动清理</comment>');
+        }
+        
+        // 定位 children：扁平结构直接挂在根，分组结构挂在对应入口分组下
+        if (isset($menuConfig['children']) && is_array($menuConfig['children'])) {
+            // 扁平结构：['title' => ..., 'children' => [...]]
+            if ($this->hasMenuUrl($menuConfig['children'], $menuItem['url'])) {
+                $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
+                return;
+            }
+            $menuConfig['children'][] = $menuItem;
+        } else {
+            // 分组结构：['admin' => ['title' => ..., 'children' => [...]], ...]
+            $groupKey = $authEntry;
+            if (!isset($menuConfig[$groupKey]) || !is_array($menuConfig[$groupKey])) {
+                $menuConfig[$groupKey] = [
+                    'title' => $this->getMenuGroupTitle($groupKey),
+                    'children' => [],
+                ];
+            }
+            if (!isset($menuConfig[$groupKey]['children']) || !is_array($menuConfig[$groupKey]['children'])) {
+                $menuConfig[$groupKey]['children'] = [];
+            }
+            if ($this->hasMenuUrl($menuConfig[$groupKey]['children'], $menuItem['url'])) {
+                $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
+                return;
+            }
+            $menuConfig[$groupKey]['children'][] = $menuItem;
+        }
         
         // 写回文件
         $content = "<?php\r\nreturn " . $this->exportArray($menuConfig) . ";";
         file_put_contents($menuFile, $content);
         
         $this->io->write("<info>✓ 已更新菜单配置: $menuFile</info>");
+    }
+
+    /**
+     * 判断 children 中是否已存在指定 url 的菜单项
+     */
+    private function hasMenuUrl(array $children, string $url): bool
+    {
+        foreach ($children as $item) {
+            if (is_array($item) && ($item['url'] ?? null) === $url) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 菜单分组的默认标题
+     */
+    private function getMenuGroupTitle(string $groupKey): string
+    {
+        $titles = [
+            'admin' => '系统管理',
+            'member' => '会员中心',
+        ];
+        return $titles[$groupKey] ?? ($this->toCamelCase($groupKey) . '管理');
     }
 
     /**
@@ -205,11 +276,6 @@ PHP;
 
         // 读取现有配置
         $langConfig = include $langFile;
-        
-        // 如果未指定动作，使用默认动作列表
-        if (empty($actions)) {
-            $actions = ['admin', 'add', 'edit', 'delete', 'change', 'b_delete'];
-        }
         
         $className = $this->toCamelCase($controllerName);
         $currentModule = $this->context->getCurrentModule();

@@ -10,6 +10,8 @@ use Composer\Factory;
 
 class ModelCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:model')

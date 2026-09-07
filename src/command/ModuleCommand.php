@@ -10,6 +10,8 @@ use xqkeji\composer\Module;
 
 class ModuleCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:module')
@@ -25,13 +27,14 @@ class ModuleCommand extends BaseCommand
   <comment># 创建本地模块到 app/ 目录</comment>
   composer xqkeji:module home
 
-  <comment># 创建 composer 包模块到指定目录（支持 --path、-path 或 -p）</comment>
+  <comment># 创建 composer 包模块到指定目录（--path / -p 三种写法等价）</comment>
   composer xqkeji:module xqkeji/xq-app-home --path=F:/docker/code/php/
-  composer xqkeji:module xqkeji/xq-app-home -path=F:/docker/code/php/
   composer xqkeji:module xqkeji/xq-app-home -p=F:/docker/code/php/
+  composer xqkeji:module xqkeji/xq-app-home -p F:/docker/code/php/
 
   <comment># 指定模块中文名：菜单与语言文件写入「教学管理」</comment>
   composer xqkeji:module xqkeji/xq-app-edu -p F:/docker/code/php/ -t 教学
+  composer xqkeji:module xqkeji/xq-app-edu -p=F:/docker/code/php/ -t=教学
 
   <comment># 选项可以放在任意位置</comment>
   composer xqkeji:module --path=F:/docker/code/php/ xqkeji/xq-app-home
@@ -40,6 +43,13 @@ class ModuleCommand extends BaseCommand
 
   <comment>-p, --path=PATH</comment>    本地路径（创建 composer 包模块时必须指定）
   <comment>-t, --title=TITLE</comment>  模块中文名称，写入 menu.php 与 lang/zh-cn.php
+
+<info>参数写法（四种等价）：</info>
+
+  composer xqkeji:module xq-app-edu -t=教学
+  composer xqkeji:module xq-app-edu -t 教学
+  composer xqkeji:module xq-app-edu -t教学
+  composer xqkeji:module xq-app-edu --title=教学
 
 <info>说明：</info>
 

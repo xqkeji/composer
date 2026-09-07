@@ -10,6 +10,8 @@ use xqkeji\composer\Table;
 
 class TableCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:table')

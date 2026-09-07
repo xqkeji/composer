@@ -10,6 +10,8 @@ use xqkeji\composer\Controller;
 
 class ControllerCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:controller')
@@ -58,6 +60,13 @@ class ControllerCommand extends BaseCommand
 
   <comment># 同时生成控制器实体文件</comment>
   composer xqkeji:controller term -t 学期 -f
+
+<info>参数写法（四种等价）：</info>
+
+  composer xqkeji:controller term -t=学期        <comment># 短参数 + 等号</comment>
+  composer xqkeji:controller term -t 学期        <comment># 短参数 + 空格</comment>
+  composer xqkeji:controller term -t学期         <comment># 短参数连写</comment>
+  composer xqkeji:controller term --title=学期   <comment># 长参数 + 等号</comment>
 
 <info>注意：</info>
 

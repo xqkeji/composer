@@ -10,6 +10,8 @@ use xqkeji\composer\Element;
 
 class ElementCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:element')

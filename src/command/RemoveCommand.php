@@ -11,6 +11,8 @@ use xqkeji\composer\Module;
 
 class RemoveCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:remove')

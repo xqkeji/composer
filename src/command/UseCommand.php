@@ -10,6 +10,8 @@ use xqkeji\composer\Context;
 
 class UseCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:use')

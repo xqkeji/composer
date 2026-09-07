@@ -11,6 +11,8 @@ use xqkeji\composer\Lang;
 
 class ActionCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     /**
      * 预定义动作列表（继承 xqkeji/mvc/action/ 下的动作类）
      */
@@ -42,8 +44,11 @@ class ActionCommand extends BaseCommand
   composer xqkeji:action Delete
   composer xqkeji:action b_close
 
-  <comment># 指定中文名称，写入 lang/zh-cn.php</comment>
+  <comment># 指定中文名称，写入 lang/zh-cn.php（四种写法等价）</comment>
   composer xqkeji:action b_close -t 批量关闭
+  composer xqkeji:action b_close -t=批量关闭
+  composer xqkeji:action b_close -t批量关闭
+  composer xqkeji:action b_close --title=批量关闭
 
 <info>选项：</info>
 

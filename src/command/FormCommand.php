@@ -10,6 +10,8 @@ use xqkeji\composer\Form;
 
 class FormCommand extends BaseCommand
 {
+    use NormalizesShortOptions;
+
     protected function configure()
     {
         $this->setName('xqkeji:form')
@@ -142,6 +144,11 @@ EOF
                     if ($nextToken === '-t' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
                         break;
                     }
+                    // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头
+                    if (isset($nextToken[0]) && '-' === $nextToken[0]) {
+                        $i++;
+                        continue;
+                    }
                     $tabElements[] = $nextToken;
                     $i++;
                 }
@@ -164,6 +171,11 @@ EOF
                     $nextToken = $tokens[$i];
                     if ($nextToken === '-t' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
                         break;
+                    }
+                    // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头
+                    if (isset($nextToken[0]) && '-' === $nextToken[0]) {
+                        $i++;
+                        continue;
                     }
                     $globalElements[] = $nextToken;
                     $i++;

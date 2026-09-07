@@ -286,6 +286,12 @@ class Module implements EventSubscriberInterface
         // 更新包名
         $composerJson['name'] = $packageName;
 
+        // 声明版本号：path repository 的包若不带 version，composer 只能从 git 分支推出 dev-master，
+        // 而根项目默认 minimum-stability 为 stable，require "*" 会解析失败
+        if (empty($composerJson['version'])) {
+            $composerJson['version'] = '1.0.0';
+        }
+
         // 更新描述
         $composerJson['description'] = "基于新齐低代码开发框架的{$moduleName}模块";
 
@@ -396,9 +402,10 @@ class Module implements EventSubscriberInterface
 
         // 检查是否已存在该 repository
         $exists = false;
+        $normalized = str_replace('\\', '/', $packagePath);
         foreach ($composerJson['repositories'] as $repo) {
             if (isset($repo['type']) && $repo['type'] === 'path' &&
-                isset($repo['url']) && $repo['url'] === $packagePath) {
+                isset($repo['url']) && str_replace('\\', '/', $repo['url']) === $normalized) {
                 $exists = true;
                 break;
             }
@@ -407,7 +414,7 @@ class Module implements EventSubscriberInterface
         if (!$exists) {
             $composerJson['repositories'][] = [
                 'type' => 'path',
-                'url' => $packagePath
+                'url' => str_replace('\\', '/', $packagePath)
             ];
         }
 

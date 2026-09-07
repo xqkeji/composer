@@ -17,7 +17,7 @@ class ControllerCommand extends BaseCommand
             ->addArgument('name', InputArgument::OPTIONAL, '控制器名称')
             ->addOption('entry', 'e', InputOption::VALUE_REQUIRED, '权限入口（默认 admin）', 'admin')
             ->addOption('auth', 'a', InputOption::VALUE_REQUIRED, '权限类型：auth（需要授权）或 login（需要登录），仅非 guest 入口有效（默认 auth）', 'auth')
-            ->addOption('actions', 'A', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '动作列表，可多次指定或用逗号分隔（默认 admin,add,edit,delete,change,b_delete）')
+            ->addOption('actions', 'A|s', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '动作列表，可多次指定或用逗号分隔（默认 admin,add,edit,delete,change,b_delete）')
             ->addOption('title', 't', InputOption::VALUE_REQUIRED, '控制器中文名称（写入菜单与语言文件）')
             ->addOption('file', 'f', InputOption::VALUE_NONE, '创建控制器实体文件（默认不创建，使用虚拟控制器）')
             ->setHelp(<<<'EOF'
@@ -29,7 +29,7 @@ class ControllerCommand extends BaseCommand
 <info>选项：</info>
   <comment>-e, --entry=ENTRY</comment>      权限入口：admin（默认）、member、guest 或自定义
   <comment>-a, --auth=AUTH</comment>        权限类型：auth（默认，需授权）或 login（需登录），guest 入口忽略
-  <comment>-A, --actions=ACTIONS</comment>  动作列表，可多次指定或用逗号分隔
+  <comment>-A, -s, --actions=ACTIONS</comment>  动作列表，可多次指定或用逗号分隔
   <comment>-t, --title=TITLE</comment>      控制器中文名称，用于菜单标题与语言文件
   <comment>-f, --file</comment>             生成控制器实体文件（默认不生成，使用虚拟控制器）
 
@@ -48,15 +48,21 @@ class ControllerCommand extends BaseCommand
   composer xqkeji:controller course -e admin -a login
   composer xqkeji:controller profile -e member -a login -t 个人中心
 
-  <comment># 指定动作列表（两种写法等价）</comment>
+  <comment># 指定动作列表（三种写法等价）</comment>
   composer xqkeji:controller loger -A admin -A delete
   composer xqkeji:controller loger -A admin,delete
+  composer xqkeji:controller loger -s admin,delete
 
   <comment># guest 入口（默认 index 动作，不写菜单）</comment>
   composer xqkeji:controller home -e guest
 
   <comment># 同时生成控制器实体文件</comment>
   composer xqkeji:controller term -t 学期 -f
+
+<info>注意：</info>
+
+  - 短参数区分大小写：-A/-s 是 --actions，-a 是 --auth
+  - 不支持 -as 这类多字符短参数，会被解析成 -a + -s
 
 <info>权限规则：</info>
 

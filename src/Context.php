@@ -328,17 +328,16 @@ class Context
             return false;
         }
 
-        // 检查控制器是否存在
+        // 低代码支持虚拟控制器：默认不生成实体文件（创建控制器时用 -f 才生成），
+        // 因此切换控制器时不再强制要求 controller/{ClassName}.php 真实存在
         $controllerPath = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
-        
         if (!is_file($controllerPath)) {
-            $this->io->write("<error>控制器 '$className' 不存在: $controllerPath</error>");
-            return false;
+            $this->io->write("<comment>  控制器 '$className' 为虚拟控制器（尚未生成实体文件）</comment>");
         }
 
         $this->currentController = $className;
         $this->saveContext();
-        
+
         $this->io->write("<info>✓ 当前控制器已设置为: $className</info>");
         return true;
     }

@@ -94,6 +94,10 @@ class Lang
         $subject = $controllerTitle ?: self::toCamelCase($controller);
         $prefix = "{$module} {$controller}";
 
+        // 控制器菜单项标题（{控制器中文名}管理）自映射到语言文件，与菜单实际显示的标题保持一致
+        $controllerMenuTitle = $subject . '管理';
+        $lang[$controllerMenuTitle] = $controllerMenuTitle;
+
         foreach ($actions as $action) {
             $title = $actionTitles[$action] ?? self::actionTitle($action, $subject);
             $lang["{$prefix} {$action} title"] = $title;
@@ -145,6 +149,8 @@ class Lang
 
         $lang["{$module} module title"] = $moduleTitle;
         $lang["{$module} module auth"] = $moduleTitle;
+        // 菜单分组标题自映射（键即中文标题，供框架 lang() 解析，可后续翻译覆盖；缺省即显示中文本身）
+        $lang[$moduleTitle] = $moduleTitle;
 
         self::save($langFile, $lang);
         $io->write("<info>✓ 已更新语言配置（模块名称）: $langFile</info>");

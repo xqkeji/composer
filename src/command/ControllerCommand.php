@@ -71,7 +71,6 @@ class ControllerCommand extends BaseCommand
 <info>注意：</info>
 
   - 短参数区分大小写：-A/-s 是 --actions，-a 是 --auth
-  - 不支持 -as 这类多字符短参数，会被解析成 -a + -s
 
 <info>权限规则：</info>
 

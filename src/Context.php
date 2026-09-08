@@ -144,11 +144,29 @@ class Context
         if ($this->currentModule === null) {
             return null;
         }
-        
+
+        return $this->resolveModulePath($this->currentModule);
+    }
+
+    /**
+     * 按模块名解析模块路径
+     *
+     * 支持两种模块形态：
+     * 1. 本地模块：app/{module}/
+     * 2. composer 包模块：config/composer.php 中注册的 vendor 包（src/ 目录）
+     *
+     * @return string|null 模块源码路径，找不到返回 null
+     */
+    public function resolveModulePath(string $moduleName): ?string
+    {
+        if ($moduleName === '') {
+            return null;
+        }
+
         $rootPath = $this->getProjectRootPath();
-        
+
         // 1. 先检查 app 目录下的本地模块
-        $localModulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $this->currentModule;
+        $localModulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
         if (is_dir($localModulePath)) {
             // 验证是否是有效模块（检查 config/acl.php 是否存在）
             $aclFile = $localModulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'acl.php';
@@ -161,8 +179,8 @@ class Context
         $composerConfigFile = $rootPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'composer.php';
         if (is_file($composerConfigFile)) {
             $composerConfig = include $composerConfigFile;
-            if (isset($composerConfig[$this->currentModule])) {
-                $packageName = $composerConfig[$this->currentModule];
+            if (isset($composerConfig[$moduleName])) {
+                $packageName = $composerConfig[$moduleName];
                 // vendor 下的包路径
                 $vendorPackagePath = $rootPath . DIRECTORY_SEPARATOR . 'vendor' 
                     . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
@@ -212,18 +230,23 @@ class Context
      */
     public function switchModule(string $moduleName): bool
     {
+        // 支持用包名切换：xqkeji/xq-app-edu、xq-app-edu
+        $moduleName = $this->normalizeModuleName($moduleName);
+
         // 验证模块名称
         if (!preg_match('/^[a-z][a-z0-9_]*$/', $moduleName)) {
             $this->io->write('<error>模块名称格式无效</error>');
             return false;
         }
 
-        // 检查模块是否存在
-        $rootPath = $this->getProjectRootPath();
-        $modulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
-        
-        if (!is_dir($modulePath)) {
-            $this->io->write("<error>模块 '$moduleName' 不存在: $modulePath</error>");
+        // 检查模块是否存在（本地模块 app/{module} 或 composer 包模块）
+        $modulePath = $this->resolveModulePath($moduleName);
+        if ($modulePath === null) {
+            $rootPath = $this->getProjectRootPath();
+            $localModulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
+            $this->io->write("<error>模块 '{$moduleName}' 不存在</error>");
+            $this->io->write("<comment>  已查找本地模块: {$localModulePath}</comment>");
+            $this->io->write('<comment>  以及 config/composer.php 中注册的 composer 包模块</comment>');
             return false;
         }
 
@@ -232,7 +255,51 @@ class Context
         $this->saveContext();
         
         $this->io->write("<info>✓ 当前模块已设置为: $moduleName</info>");
+        $this->io->write("<comment>  模块路径: $modulePath</comment>");
         return true;
+    }
+
+    /**
+     * 把包名（xqkeji/xq-app-edu、xq-app-edu）归一化为模块名（edu）
+     */
+    private function normalizeModuleName(string $name): string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return $name;
+        }
+
+        // 已是合法模块名则直接返回
+        if (preg_match('/^[a-z][a-z0-9_]*$/', $name)) {
+            return $name;
+        }
+
+        $configFile = $this->getProjectRootPath() . DIRECTORY_SEPARATOR . 'config'
+            . DIRECTORY_SEPARATOR . 'composer.php';
+        if (!is_file($configFile)) {
+            return $name;
+        }
+
+        $config = include $configFile;
+        if (!is_array($config)) {
+            return $name;
+        }
+
+        $name = str_replace('\\', '/', $name);
+        foreach ($config as $module => $package) {
+            $package = str_replace('\\', '/', (string) $package);
+            // 完整包名匹配：xqkeji/xq-app-edu
+            if ($package === $name) {
+                return (string) $module;
+            }
+            // 包名后半段匹配：xq-app-edu
+            $pos = strrpos($package, '/');
+            if ($pos !== false && substr($package, $pos + 1) === $name) {
+                return (string) $module;
+            }
+        }
+
+        return $name;
     }
 
     /**

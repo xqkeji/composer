@@ -110,6 +110,12 @@ class Lang
             $lang["{$module} module {$controller} {$action} auth"] = $title;
         }
 
+        // admin 列表加载成功/失败提示（特殊文案：加载{控制器中文名}管理列表成功/失败，区别于其它动作的生成格式）
+        if (in_array('admin', $actions, true)) {
+            $lang["{$prefix} admin success"] = '加载' . $subject . '管理列表成功';
+            $lang["{$prefix} admin failed"] = '加载' . $subject . '管理列表失败';
+        }
+
         // 控制器级权限描述
         $lang["{$module} module {$controller} auth"] = $controllerTitle
             ? ($controllerTitle . '管理')

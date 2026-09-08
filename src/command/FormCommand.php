@@ -79,10 +79,15 @@ EOF
         
         // 解析Tab和全局元素
         list($tabGroups, $globalElements) = $this->parseTabAndGlobal($input, $name);
-        
+
+        // Tab/全局表单的元素已通过 parseTabAndGlobal 从 argv 解析到 tabGroups/globalElements；
+        // 普通表单（无 -t/-g）的元素来自命令行位置参数 elements，需传入 createForm，否则 $el 为空
+        $isTabForm = !empty($tabGroups) || !empty($globalElements);
+        $elements = $input->getArgument('elements') ?? [];
+
         $form = new Form($this->getIO(), $this->requireComposer());
-        $form->createForm($name, [], $input, $output, $tabGroups, $globalElements);
-        
+        $form->createForm($name, $isTabForm ? [] : $elements, $input, $output, $tabGroups, $globalElements);
+
         return 0;
     }
     

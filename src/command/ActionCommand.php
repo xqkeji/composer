@@ -44,7 +44,7 @@ class ActionCommand extends BaseCommand
   composer xqkeji:action Delete
   composer xqkeji:action b_close
 
-  <comment># 指定中文名称，写入 lang/zh-cn.php（四种写法等价）</comment>
+  <comment># 指定中文名称，写入 lang/zh_cn.php（四种写法等价）</comment>
   composer xqkeji:action b_close -t 批量关闭
   composer xqkeji:action b_close -t=批量关闭
   composer xqkeji:action b_close -t批量关闭

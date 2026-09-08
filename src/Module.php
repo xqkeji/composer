@@ -272,7 +272,7 @@ class Module implements EventSubscriberInterface
     }
 
     /**
-     * 写入模块中文名称到 menu.php 与 lang/zh-cn.php
+     * 写入模块中文名称到 menu.php 与 lang/zh_cn.php
      *
      * 传入的中文名作为模块主体名，菜单与语言文件中统一显示为「{中文名}管理」
      */

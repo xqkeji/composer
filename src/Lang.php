@@ -4,7 +4,7 @@ namespace xqkeji\composer;
 use Composer\IO\IOInterface;
 
 /**
- * 语言配置（lang/zh-cn.php）读写
+ * 语言配置（lang/zh_cn.php）读写
  *
  * 键名约定：
  *   '{模块} {控制器} {动作} title'            动作页面标题
@@ -158,7 +158,7 @@ class Lang
 
     private static function langFile(string $modulePath): string
     {
-        return $modulePath . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . 'zh-cn.php';
+        return $modulePath . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . 'zh_cn.php';
     }
 
     private static function load(string $langFile, IOInterface $io): ?array

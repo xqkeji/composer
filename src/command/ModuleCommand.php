@@ -42,7 +42,7 @@ class ModuleCommand extends BaseCommand
 <info>选项：</info>
 
   <comment>-p, --path=PATH</comment>    本地路径（创建 composer 包模块时必须指定）
-  <comment>-t, --title=TITLE</comment>  模块中文名称，写入 menu.php 与 lang/zh-cn.php
+  <comment>-t, --title=TITLE</comment>  模块中文名称，写入 menu.php 与 lang/zh_cn.php
 
 <info>参数写法（四种等价）：</info>
 

@@ -11,6 +11,7 @@ use Composer\IO\IOInterface;
  *   '{模块} {控制器} {动作} success|failed'    操作结果提示
  *   '{模块} module {控制器} {动作} auth'        动作权限描述
  *   '{模块} module {控制器} auth'              控制器权限描述
+ *   '{模块} module {控制器}'                   控制器显示名称（中文名）
  *   '{模块} module title' / '{模块} module auth' 模块名称与权限描述
  */
 class Lang
@@ -120,6 +121,9 @@ class Lang
         $lang["{$module} module {$controller} auth"] = $controllerTitle
             ? ($controllerTitle . '管理')
             : (self::toCamelCase($controller) . '管理');
+
+        // 控制器显示名称（{模块} module {控制器} => {控制器中文名}），供框架 lang() 解析控制器名
+        $lang["{$module} module {$controller}"] = $subject;
 
         self::save($langFile, $lang);
         $io->write("<info>✓ 已更新语言配置: $langFile</info>");

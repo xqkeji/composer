@@ -15,7 +15,7 @@ return [
 	'{MODULE_NAME} {CONTROLLER_NAME} delete failed'=>'删除{CONTROLLER_NAME}失败',
 	'{MODULE_NAME} {CONTROLLER_NAME} change success'=>'修改{CONTROLLER_NAME}状态成功',
 	'{MODULE_NAME} {CONTROLLER_NAME} change failed'=>'修改{CONTROLLER_NAME}状态失败',
-
+	'{MODULE_NAME} module {CONTROLLER_NAME}'=>'{CONTROLLER_NAME}',
 	//{MODULE_NAME}管理权限
 	'{MODULE_NAME} module {CONTROLLER_NAME} auth'=>'{CONTROLLER_NAME}管理',
 	'{MODULE_NAME} module {CONTROLLER_NAME} admin auth'=>'{CONTROLLER_NAME}列表',

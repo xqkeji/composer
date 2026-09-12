@@ -112,9 +112,9 @@ class Form
             $this->createFormFile($formPath, $className, $configName, $elementRefs, $currentModule);
         }
 
-        // 表单显示名复用控制器名中文（若存在），否则以类名兜底，统一留存到 lang（去重）
-        // 表单名=控制器名时，该键与控制器显示名键一致，自然复用已有中文、不重复
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} module {$className}", $className);
+        // 表单显示名复用控制器名中文（共享键 {模块} module {表单名蛇形}）；
+        // 表单名=控制器名时该键与控制器显示名键一致，自然复用已有中文、不重复
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} module {$configName}", $className);
 
         // 自动切换为表单模式
         $this->context->switchMode('form');
@@ -165,8 +165,8 @@ class Form
         }
 
         $this->createElementFile($elementPath, $className, $configName, $elementText);
-        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖）
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$className} name", $elementText);
+        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖；键全小写蛇形）
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$configName} name", $elementText);
         $this->io->write("<info>✓ 已创建表单元素: $className</info>");
         return '~' . $className;
     }
@@ -177,7 +177,7 @@ class Form
     private function findElementInModule(string $moduleName, string $className): ?string
     {
         $rootPath = $this->getRootPath();
-        
+
         // 1. 检查 app 目录下的模块
         $localModulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
         if (is_dir($localModulePath)) {
@@ -192,18 +192,18 @@ class Form
         if (!is_file($composerConfigFile)) {
             return null;
         }
-        
+
         $composerConfig = include $composerConfigFile;
         if (!isset($composerConfig[$moduleName])) {
             return null;
         }
-        
+
         $packageName = $composerConfig[$moduleName];
-        
+
         // 3. 在 vendor 目录下的包中查找
-        $vendorPackagePath = $rootPath . DIRECTORY_SEPARATOR . 'vendor' 
+        $vendorPackagePath = $rootPath . DIRECTORY_SEPARATOR . 'vendor'
             . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
-        
+
         if (is_dir($vendorPackagePath)) {
             // 检查 src/form/element/
             $srcPath = $vendorPackagePath . DIRECTORY_SEPARATOR . 'src';
@@ -213,7 +213,7 @@ class Form
                     return $elementFile;
                 }
             }
-            
+
             // 检查包根目录的 form/element/
             $elementFile = $vendorPackagePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . 'element' . DIRECTORY_SEPARATOR . $className . '.php';
             if (is_file($elementFile)) {
@@ -248,7 +248,7 @@ class Form
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\form\\element";
         $useText = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'Text';
-        
+
         return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '@row';\n}\n";
     }
 
@@ -294,7 +294,7 @@ class Form
     private function generateFormContent(string $moduleName, string $className, string $configName, array $elementRefs): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\form";
-        
+
         // 构建元素列表字符串
         $elementsStr = '';
         if (!empty($elementRefs)) {
@@ -306,8 +306,8 @@ class Form
         }
 
         $useForm = 'xqkeji' . '\\' . 'form' . '\\' . 'Form';
-        
-        return "<?php\nnamespace {$namespace};\n\nuse {$useForm};\n\nclass {$className} extends Form\n{\n    protected \$name = '{$configName}';\n    \n    // 表单元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+
+        return "<?php\nnamespace {$namespace};\n\nuse {$useForm};\n\nclass {$className} extends Form\n{\n    protected \$name = '{$configName}';\n\n    // 表单元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
     }
 
     /**

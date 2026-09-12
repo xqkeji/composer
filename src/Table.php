@@ -48,7 +48,7 @@ class Table
             return;
         }
 
-        // 转换为大驼峰类名（控制器/表格类名，不含模块前缀）
+        // 转换为大驼峰类名（表格/控制器类名，不含模块前缀）
         $className = $this->toCamelCase($tableName);
         // 表名（集合名）= 模块名_控制器名，如 edu_dept、content_category
         $configName = $this->toSnakeCase($currentModule) . '_' . $this->toSnakeCase($tableName);
@@ -59,18 +59,37 @@ class Table
             mkdir($tablePath, 0755, true);
         }
 
-        // 创建表格元素
+        // 表格元素引用（生成 $el 用）
         $elementRefs = [];
-        if (!empty($elements)) {
-            $elementPath = $tablePath . DIRECTORY_SEPARATOR . 'element';
-            if (!is_dir($elementPath)) {
-                mkdir($elementPath, 0755, true);
+        if ($isTree) {
+            if (!empty($elements)) {
+                $this->io->write("<comment>⚠ 树状表格使用内置默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），已忽略命令行传入的元素参数</comment>");
             }
+            // 树状表格中文名：优先复用控制器显示名（共享键 {模块} module {表名蛇形}），
+            // 不存在则交互询问并去重写入 lang；用于替换树元素模板中的中文名占位符
+            $tableCn = $this->resolveTreeTableCn($modulePath, $currentModule, $tableName, $className);
+            // 复制并改名 tree 元素到模块 table/element/（不带 tree 子目录），元素中文名随表格中文名更新
+            $this->ensureTreeElements($modulePath, $currentModule, $tableName, $className, $configName, $tableCn);
+            // 树状表格默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），忽略命令行传入的 elements
+            $elementRefs = [
+                '@Id',
+                '~Name' . $className,
+                '@Status',
+                '~EditDelete' . $className,
+            ];
+        } else {
+            // 非树状：逐元素查找或创建（命令行传入的 elements）
+            if (!empty($elements)) {
+                $elementPath = $tablePath . DIRECTORY_SEPARATOR . 'element';
+                if (!is_dir($elementPath)) {
+                    mkdir($elementPath, 0755, true);
+                }
 
-            foreach ($elements as $element) {
-                $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output);
-                if ($elementRef !== null) {
-                    $elementRefs[] = $elementRef;
+                foreach ($elements as $element) {
+                    $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output);
+                    if ($elementRef !== null) {
+                        $elementRefs[] = $elementRef;
+                    }
                 }
             }
         }
@@ -78,17 +97,17 @@ class Table
         // 创建表格类
         $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree);
 
-        // 树形表格：自动检查并复制对应的树状控制器动作类（controller/{表格名大驼峰}/）
+        // 树形表格：自动检查并复制对应的树状控制器动作类（controller/{表格名全小写蛇形}/）
         if ($isTree) {
-            $this->ensureTreeController($modulePath, $currentModule, $className);
+            $this->ensureTreeController($modulePath, $currentModule, $tableName);
             // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
             // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
             $this->seedTreeCollection($configName);
         }
 
-        // 表格显示名复用控制器名中文（若存在），否则以类名兜底，统一留存到 lang（去重）
-        // 表格名=控制器名时，该键与控制器显示名键一致，自然复用已有中文、不重复
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} module {$className}", $className);
+        // 表格显示名复用控制器名中文（共享键 {模块} module {表名蛇形}）；
+        // 表格名=控制器名时该键与控制器显示名键一致，自然复用已有中文、不重复
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} module " . $this->toSnakeCase($tableName), $className);
 
         // 自动切换为表格模式
         $this->context->switchMode('table');
@@ -139,8 +158,8 @@ class Table
         }
 
         $this->createElementFile($elementPath, $className, $configName, $elementText);
-        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖）
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$className} name", $elementText);
+        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖；键全小写蛇形）
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$configName} name", $elementText);
         $this->io->write("<info>✓ 已创建表格元素: $className</info>");
         return '~' . $className;
     }
@@ -151,7 +170,7 @@ class Table
     private function findElementInModule(string $moduleName, string $className): ?string
     {
         $rootPath = $this->getRootPath();
-        
+
         // 1. 检查 app 目录下的模块
         $localModulePath = $rootPath . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . $moduleName;
         if (is_dir($localModulePath)) {
@@ -166,18 +185,18 @@ class Table
         if (!is_file($composerConfigFile)) {
             return null;
         }
-        
+
         $composerConfig = include $composerConfigFile;
         if (!isset($composerConfig[$moduleName])) {
             return null;
         }
-        
+
         $packageName = $composerConfig[$moduleName];
-        
+
         // 3. 在 vendor 目录下的包中查找
-        $vendorPackagePath = $rootPath . DIRECTORY_SEPARATOR . 'vendor' 
+        $vendorPackagePath = $rootPath . DIRECTORY_SEPARATOR . 'vendor'
             . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $packageName);
-        
+
         if (is_dir($vendorPackagePath)) {
             // 检查 src/table/element/
             $srcPath = $vendorPackagePath . DIRECTORY_SEPARATOR . 'src';
@@ -187,7 +206,7 @@ class Table
                     return $elementFile;
                 }
             }
-            
+
             // 检查包根目录的 table/element/
             $elementFile = $vendorPackagePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element' . DIRECTORY_SEPARATOR . $className . '.php';
             if (is_file($elementFile)) {
@@ -223,7 +242,7 @@ class Table
         $namespace = "xqkeji\\app\\{$moduleName}\\table\\element";
         $useListItem = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'ListItem';
         $useModel = 'xqkeji' . '\\' . 'mvc' . '\\' . 'builder' . '\\' . 'Model';
-        
+
         return "<?php\nnamespace {$namespace};\n\nuse {$useListItem};\nuse {$useModel};\n\nclass {$className} extends ListItem\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'style' => 'min-width:200px;',\n    ];\n}\n";
     }
 
@@ -251,7 +270,7 @@ class Table
     private function generateTableContent(string $moduleName, string $className, string $configName, array $elementRefs, bool $isTree = false): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\table";
-        
+
         // 构建元素列表字符串
         $elementsStr = '';
         if (!empty($elementRefs)) {
@@ -262,28 +281,130 @@ class Table
             $elementsStr .= "    ";
         }
 
-        // 根据 $isTree 选择基类
+        // 根据 $isTree 选择基类与默认 foot
         if ($isTree) {
             $useTable = 'xqkeji' . '\\' . 'form' . '\\' . 'TreegridTable';
             $baseClass = 'TreegridTable';
+            $foot = "'~Foot{$className}'";
         } else {
             $useTable = 'xqkeji' . '\\' . 'form' . '\\' . 'Table';
             $baseClass = 'Table';
+            $foot = "'@Foot'";
         }
-        
-        return "<?php\nnamespace {$namespace};\n\nuse {$useTable};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$foot = '@Foot';\n    \n    // 表格元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+
+        return "<?php\nnamespace {$namespace};\n\nuse {$useTable};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$foot = {$foot};\n\n    // 表格元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+    }
+
+    /**
+     * 树状表格：解析中文名
+     *
+     * 优先复用控制器显示名（共享键 {模块} module {表名蛇形}），与表单/表格共享同一中文名；
+     * 该键不存在且为交互模式时询问用户；最终通过 Lang::ensureName 去重写入（已有翻译不覆盖）。
+     * 返回的中文名用于替换树元素模板中的 {中文名称}/{中文名} 占位符。
+     */
+    private function resolveTreeTableCn(string $modulePath, string $currentModule, string $tableName, string $className): string
+    {
+        $langKey = "{$currentModule} module " . $this->toSnakeCase($tableName);
+
+        $cn = Lang::getValue($modulePath, $langKey);
+        if ($cn === null || $cn === '') {
+            if ($this->io->isInteractive()) {
+                $cn = $this->io->ask(
+                    "<question>请输入树状表格 '$tableName' 的中文名称（留空使用 '$className'）:</question> ",
+                    $className
+                );
+            }
+        }
+        if (empty($cn)) {
+            $cn = $className;
+        }
+        // 去重写入（已有翻译不覆盖）
+        Lang::ensureName($this->io, $modulePath, $langKey, $cn);
+        return $cn;
+    }
+
+    /**
+     * 树状表格：复制并改名 tree 元素到模块的 table/element/（不带 tree 子目录）
+     *
+     * 源：插件自身 src/example/src/table/element/tree/
+     * 目标：{模块路径}/table/element/（文件名 Tree 后缀 -> 表格大驼峰名，如 NameTree -> NameTestTree）
+     * 复制时替换：
+     *   - 命名空间占位符 {MODULE_NAME} -> 当前模块
+     *   - 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
+     *   - 中文名占位符 {中文名称}/{中文名} -> 表格中文名
+     *   - FootTree 的 $name 占位符 {TABELE_NAME} -> 表名（模块_表）
+     *   - ToolbarTree 的 $name（list-toolbar-tree）-> list-toolbar-{表蛇形}
+     * 元素文件已存在则幂等跳过。
+     */
+    private function ensureTreeElements(string $modulePath, string $currentModule, string $tableName, string $className, string $configName, string $tableCn): void
+    {
+        $elementDir = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
+        if (!is_dir($elementDir)) {
+            mkdir($elementDir, 0755, true);
+        }
+
+        // 插件自身的 example 树状元素模板目录（与 Table.php 同级的 src 下）
+        $treeTemplateDir = __DIR__ . DIRECTORY_SEPARATOR . 'example' . DIRECTORY_SEPARATOR
+            . 'src' . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element' . DIRECTORY_SEPARATOR . 'tree';
+
+        if (!is_dir($treeTemplateDir)) {
+            $this->io->write("<error>未找到树状元素模板目录: {$treeTemplateDir}</error>");
+            return;
+        }
+
+        $files = glob($treeTemplateDir . DIRECTORY_SEPARATOR . '*.php') ?: [];
+        if (empty($files)) {
+            $this->io->write("<comment>⚠ 树状元素模板目录为空，未复制任何文件</comment>");
+            return;
+        }
+
+        $tableSnake = $this->toSnakeCase($tableName);
+
+        foreach ($files as $templateFile) {
+            $content = file_get_contents($templateFile);
+            if ($content === false) {
+                $this->io->write("<error>读取树状元素模板失败: {$templateFile}</error>");
+                continue;
+            }
+
+            // 命名空间占位符 {MODULE_NAME} -> 当前模块
+            $content = str_replace('{MODULE_NAME}', $currentModule, $content);
+            // 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
+            $content = str_replace('Tree', $className, $content);
+            // 中文名占位符（NameTree::$text 的 {中文名称} 与 ToolbarTree title 的 {中文名}）
+            $content = str_replace(['{中文名称}', '{中文名}'], $tableCn, $content);
+            // FootTree::$name 的 {TABELE_NAME}（模板原拼写）-> 表名（模块_表）
+            $content = str_replace('{TABELE_NAME}', $configName, $content);
+            // ToolbarTree::$name 的 list-toolbar-tree -> list-toolbar-{表蛇形}
+            $content = str_replace('list-toolbar-tree', 'list-toolbar-' . $tableSnake, $content);
+
+            // 文件名：Tree 后缀 -> 表格大驼峰名（不带 tree 子目录）
+            $base = basename($templateFile);
+            $newBase = str_replace('Tree', $className, $base);
+            $target = $elementDir . DIRECTORY_SEPARATOR . $newBase;
+
+            if (is_file($target)) {
+                $this->io->write("<comment>⚠ 树状元素已存在，跳过: {$target}</comment>");
+                continue;
+            }
+            file_put_contents($target, $content);
+            $this->io->write("<info>✓ 已复制树状元素: {$target}</info>");
+        }
     }
 
     /**
      * 树形表格：自动检查并复制对应的树状控制器动作类
      *
-     * 目标目录：{模块路径}/controller/{表格名大驼峰}/
+     * 目标目录：{模块路径}/controller/{表格名全小写蛇形}/
      * 源模板：插件自身的 src/example/src/controller/tree/
-     * 复制时替换命名空间占位符 {MODULE_NAME} -> 当前模块、{CONTROLLER_NAME} -> 表格名大驼峰
+     * 复制时替换命名空间占位符 {MODULE_NAME} -> 当前模块、{CONTROLLER_NAME} -> 表格名全小写蛇形
+     * （目录名与命名空间段均为全小写，符合框架 PSR-4：xqkeji\app\{模块}\controller\{表名}\）
      */
-    private function ensureTreeController(string $modulePath, string $currentModule, string $className): void
+    private function ensureTreeController(string $modulePath, string $currentModule, string $tableName): void
     {
-        $controllerDir = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className;
+        // 目录名 / 命名空间段统一使用全小写蛇形（如 test_tree），与框架命名约定一致
+        $dirName = $this->toSnakeCase($tableName);
+        $controllerDir = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $dirName;
 
         if (is_dir($controllerDir)) {
             $this->io->write("<comment>⚠ 树状控制器目录已存在，跳过复制: {$controllerDir}</comment>");
@@ -316,10 +437,10 @@ class Table
                 $this->io->write("<error>读取树状控制器模板失败: {$templateFile}</error>");
                 continue;
             }
-            // 替换命名空间占位符
+            // 替换命名空间占位符（{CONTROLLER_NAME} 使用全小写蛇形，与目录名一致）
             $content = str_replace(
                 ['{MODULE_NAME}', '{CONTROLLER_NAME}'],
-                [$currentModule, $className],
+                [$currentModule, $dirName],
                 $content
             );
             $target = $controllerDir . DIRECTORY_SEPARATOR . basename($templateFile);

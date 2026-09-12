@@ -6,13 +6,14 @@ use Composer\IO\IOInterface;
 /**
  * 语言配置（lang/zh_cn.php）读写
  *
- * 键名约定：
+ * 键名约定（全部小写、蛇形，与框架一致）：
  *   '{模块} {控制器} {动作} title'            动作页面标题
  *   '{模块} {控制器} {动作} success|failed'    操作结果提示
  *   '{模块} module {控制器} {动作} auth'        动作权限描述
  *   '{模块} module {控制器} auth'              控制器权限描述
  *   '{模块} module {控制器}'                   控制器显示名称（中文名）
  *   '{模块} module title' / '{模块} module auth' 模块名称与权限描述
+ *   '{模块} {元素蛇形} name'                    元素中文名（备用）
  */
 class Lang
 {
@@ -146,13 +147,33 @@ class Lang
     }
 
     /**
+     * 读取单条语言配置值（键统一 strtolower 后查找）；不存在返回 null
+     */
+    public static function getValue(string $modulePath, string $key): ?string
+    {
+        $key = strtolower($key);
+        $langFile = self::langFile($modulePath);
+        if (!is_file($langFile)) {
+            return null;
+        }
+        $lang = include $langFile;
+        if (!is_array($lang) || !isset($lang[$key])) {
+            return null;
+        }
+        $v = $lang[$key];
+        return is_string($v) ? $v : null;
+    }
+
+    /**
      * 去重写入单条语言配置（保留已有翻译）
      *
      * 若 $key 已存在且非空，则保留原有值不覆盖（满足「本来有翻译的不用加，没有的加上去」）；
      * 仅当 key 不存在或值为空字符串时才写入。返回是否实际写入。
+     * 键统一 strtolower，确保 zh_cn.php 下标全小写（值不改写）。
      */
     public static function ensureName(IOInterface $io, string $modulePath, string $key, string $value): bool
     {
+        $key = strtolower($key);
         $langFile = self::langFile($modulePath);
         $lang = self::load($langFile, $io);
         if ($lang === null) {
@@ -189,10 +210,12 @@ class Lang
     }
 
     /**
-     * 去重赋值：仅当 key 不存在或值为空时才写入，保留已有非空翻译
+     * 去重赋值：仅当 key 不存在或值为空时才写入，保留已有非空翻译。
+     * 键统一 strtolower，确保 zh_cn.php 下标全小写。
      */
     private static function set(array &$lang, string $key, string $value): void
     {
+        $key = strtolower($key);
         if (!isset($lang[$key]) || $lang[$key] === '') {
             $lang[$key] = $value;
         }

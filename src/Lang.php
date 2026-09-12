@@ -96,34 +96,33 @@ class Lang
         $prefix = "{$module} {$controller}";
 
         // 控制器菜单项标题（{控制器中文名}管理）自映射到语言文件，与菜单实际显示的标题保持一致
-        $controllerMenuTitle = $subject . '管理';
-        $lang[$controllerMenuTitle] = $controllerMenuTitle;
+        self::set($lang, $subject . '管理', $subject . '管理');
 
         foreach ($actions as $action) {
             $title = $actionTitles[$action] ?? self::actionTitle($action, $subject);
-            $lang["{$prefix} {$action} title"] = $title;
+            self::set($lang, "{$prefix} {$action} title", $title);
 
             if (in_array($action, self::RESULT_ACTIONS, true)) {
-                $lang["{$prefix} {$action} success"] = $title . '成功';
-                $lang["{$prefix} {$action} failed"] = $title . '失败';
+                self::set($lang, "{$prefix} {$action} success", $title . '成功');
+                self::set($lang, "{$prefix} {$action} failed", $title . '失败');
             }
 
-            $lang["{$module} module {$controller} {$action} auth"] = $title;
+            self::set($lang, "{$module} module {$controller} {$action} auth", $title);
         }
 
         // admin 列表加载成功/失败提示（特殊文案：加载{控制器中文名}管理列表成功/失败，区别于其它动作的生成格式）
         if (in_array('admin', $actions, true)) {
-            $lang["{$prefix} admin success"] = '加载' . $subject . '管理列表成功';
-            $lang["{$prefix} admin failed"] = '加载' . $subject . '管理列表失败';
+            self::set($lang, "{$prefix} admin success", '加载' . $subject . '管理列表成功');
+            self::set($lang, "{$prefix} admin failed", '加载' . $subject . '管理列表失败');
         }
 
         // 控制器级权限描述
-        $lang["{$module} module {$controller} auth"] = $controllerTitle
+        self::set($lang, "{$module} module {$controller} auth", $controllerTitle
             ? ($controllerTitle . '管理')
-            : (self::toCamelCase($controller) . '管理');
+            : (self::toCamelCase($controller) . '管理'));
 
         // 控制器显示名称（{模块} module {控制器} => {控制器中文名}），供框架 lang() 解析控制器名
-        $lang["{$module} module {$controller}"] = $subject;
+        self::set($lang, "{$module} module {$controller}", $subject);
 
         self::save($langFile, $lang);
         $io->write("<info>✓ 已更新语言配置: $langFile</info>");
@@ -147,6 +146,28 @@ class Lang
     }
 
     /**
+     * 去重写入单条语言配置（保留已有翻译）
+     *
+     * 若 $key 已存在且非空，则保留原有值不覆盖（满足「本来有翻译的不用加，没有的加上去」）；
+     * 仅当 key 不存在或值为空字符串时才写入。返回是否实际写入。
+     */
+    public static function ensureName(IOInterface $io, string $modulePath, string $key, string $value): bool
+    {
+        $langFile = self::langFile($modulePath);
+        $lang = self::load($langFile, $io);
+        if ($lang === null) {
+            return false;
+        }
+        if (isset($lang[$key]) && $lang[$key] !== '') {
+            return false;
+        }
+        $lang[$key] = $value;
+        self::save($langFile, $lang);
+        $io->write("<info>✓ 已写入语言配置（去重）: $key => $value</info>");
+        return true;
+    }
+
+    /**
      * 写入模块语言配置
      */
     public static function writeModule(IOInterface $io, string $modulePath, string $module, string $moduleTitle): void
@@ -157,13 +178,24 @@ class Lang
             return;
         }
 
-        $lang["{$module} module title"] = $moduleTitle;
-        $lang["{$module} module auth"] = $moduleTitle;
+        // 去重：已有非空翻译则保留，不覆盖（满足「本来有翻译的不用加」）
+        self::set($lang, "{$module} module title", $moduleTitle);
+        self::set($lang, "{$module} module auth", $moduleTitle);
         // 菜单分组标题自映射（键即中文标题，供框架 lang() 解析，可后续翻译覆盖；缺省即显示中文本身）
-        $lang[$moduleTitle] = $moduleTitle;
+        self::set($lang, $moduleTitle, $moduleTitle);
 
         self::save($langFile, $lang);
         $io->write("<info>✓ 已更新语言配置（模块名称）: $langFile</info>");
+    }
+
+    /**
+     * 去重赋值：仅当 key 不存在或值为空时才写入，保留已有非空翻译
+     */
+    private static function set(array &$lang, string $key, string $value): void
+    {
+        if (!isset($lang[$key]) || $lang[$key] === '') {
+            $lang[$key] = $value;
+        }
     }
 
     private static function langFile(string $modulePath): string

@@ -112,6 +112,10 @@ class Form
             $this->createFormFile($formPath, $className, $configName, $elementRefs, $currentModule);
         }
 
+        // 表单显示名复用控制器名中文（若存在），否则以类名兜底，统一留存到 lang（去重）
+        // 表单名=控制器名时，该键与控制器显示名键一致，自然复用已有中文、不重复
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} module {$className}", $className);
+
         // 自动切换为表单模式
         $this->context->switchMode('form');
     }
@@ -161,6 +165,8 @@ class Form
         }
 
         $this->createElementFile($elementPath, $className, $configName, $elementText);
+        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖）
+        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$className} name", $elementText);
         $this->io->write("<info>✓ 已创建表单元素: $className</info>");
         return '~' . $className;
     }

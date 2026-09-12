@@ -467,7 +467,7 @@ class Table
         $controller->initControllerConfig(
             $modulePath,
             $configName,
-            ['admin', 'edit', 'delete', 'change', 'add', 'move'],
+            ['add', 'edit', 'admin', 'delete', 'change', 'move'],
             $tableCn
         );
     }
@@ -477,7 +477,7 @@ class Table
      *
      * 与普通 xqkeji:controller --file 创建保持一致：
      *   - 创建 controller/{大驼峰表名}.php（继承 xqkeji\mvc\Controller，动作由框架基类按约定解析，无需单独动作类文件）
-     *   - 动作集为 admin/edit/delete/change/add（含 change，不含树表专属的 move）
+     *   - 动作集为 add/edit/admin/delete/change（含 change，不含树表专属的 move）
      *   - 不复制 tree 元素、不初始化树集合
      * 控制器文件已存在则幂等跳过（仅补齐配置初始化）。
      *
@@ -501,12 +501,12 @@ class Table
         }
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
-        // 动作集含 change；不含树表专属的 move；普通表中文名作为控制器显示名
+        // 动作集含 change；顺序 add/edit/admin/delete/change（不含树表专属的 move）；普通表中文名作为控制器显示名
         $controller = new Controller($this->io, $this->composer);
         $controller->initControllerConfig(
             $modulePath,
             $this->toSnakeCase($tableName),
-            ['admin', 'edit', 'delete', 'change', 'add'],
+            ['add', 'edit', 'admin', 'delete', 'change'],
             $tableCn
         );
     }

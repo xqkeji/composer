@@ -48,10 +48,10 @@ class Table
             return;
         }
 
-        // 转换为大驼峰类名
+        // 转换为大驼峰类名（控制器/表格类名，不含模块前缀）
         $className = $this->toCamelCase($tableName);
-        // 转换为小写下划线格式，用于配置文件
-        $configName = $this->toSnakeCase($tableName);
+        // 表名（集合名）= 模块名_控制器名，如 edu_dept、content_category
+        $configName = $this->toSnakeCase($currentModule) . '_' . $this->toSnakeCase($tableName);
 
         // 创建 table 目录
         $tablePath = $modulePath . DIRECTORY_SEPARATOR . 'table';
@@ -81,6 +81,9 @@ class Table
         // 树形表格：自动检查并复制对应的树状控制器动作类（controller/{表格名大驼峰}/）
         if ($isTree) {
             $this->ensureTreeController($modulePath, $currentModule, $className);
+            // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
+            // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
+            $this->seedTreeCollection($configName);
         }
 
         // 自动切换为表格模式
@@ -316,6 +319,100 @@ class Table
             $target = $controllerDir . DIRECTORY_SEPARATOR . basename($templateFile);
             file_put_contents($target, $content);
             $this->io->write("<info>✓ 已复制树状控制器动作类: {$target}</info>");
+        }
+    }
+
+    /**
+     * 树状表格：即时初始化 MongoDB 集合（建索引 + 根节点）
+     *
+     * 作为代码生成器的一部分，在生成树表文件时直接执行，不依赖任何 composer 事件。
+     * 逻辑参考 xq-app-content/src/composer/Install.php：
+     *   - 建索引：name / name+parent_id / left_value / right_value
+     *   - 插入固定 _id 的根节点（嵌套集合左右值 left=1 / right=2）
+     * 集合名 = 模块名_控制器名（即传入的 $collection）。
+     *
+     * 容错：config 缺失、未启用 mongodb 扩展、MongoDB 不可达 均只告警，不阻断文件生成。
+     */
+    private function seedTreeCollection(string $collection): void
+    {
+        $containerFile = $this->getRootConfigPath() . DIRECTORY_SEPARATOR . 'container.php';
+        if (!is_file($containerFile)) {
+            $this->io->write("<comment>⚠ 未找到 config/container.php，跳过树集合 {$collection} 初始化（请手动初始化）</comment>");
+            return;
+        }
+        $config = include $containerFile;
+        if (!isset($config['db'])) {
+            $this->io->write("<comment>⚠ config 中无 db 配置，跳过树集合 {$collection} 初始化</comment>");
+            return;
+        }
+        if (!class_exists('MongoDB\\Driver\\Manager')) {
+            $this->io->write("<comment>⚠ 未启用 MongoDB 扩展，跳过树集合 {$collection} 初始化</comment>");
+            return;
+        }
+
+        $db = $config['db'];
+        $hostname = $db['hostname'] ?? '';
+        $hostport = $db['hostport'] ?? '';
+        $database = $db['database'] ?? '';
+        $username = $db['username'] ?? '';
+        $password = $db['password'] ?? '';
+        $uri = !empty($username)
+            ? "mongodb://{$username}:{$password}@{$hostname}:{$hostport}"
+            : "mongodb://{$hostname}:{$hostport}";
+
+        try {
+            $manager = new \MongoDB\Driver\Manager($uri, [
+                'serverSelectionTryOnce'   => false,
+                'serverSelectionTimeoutMS' => 500,
+                'connectTimeoutMS'         => 500,
+            ]);
+
+            // 建索引：name / name+parent_id / left_value / right_value
+            $indexes = [
+                ['name' => "{$collection}_name",            'key' => ['name' => 1]],
+                ['name' => "{$collection}_name_parent_id",  'key' => ['name' => 1, 'parent_id' => 1]],
+                ['name' => "{$collection}_left_value",      'key' => ['left_value' => 1]],
+                ['name' => "{$collection}_right_value",     'key' => ['right_value' => 1]],
+            ];
+            foreach ($indexes as $idx) {
+                $cmd = new \MongoDB\Driver\Command([
+                    'createIndexes' => $collection,
+                    'indexes'       => [$idx],
+                ]);
+                $res = $manager->executeCommand($database, $cmd)->toArray();
+                $ok = !empty($res) ? intval($res[0]->ok) : 0;
+                $this->io->write($ok > 0
+                    ? "<info>✓ 创建集合 {$collection} 索引 {$idx['name']} 成功</info>"
+                    : "<comment>⚠ 创建集合 {$collection} 索引 {$idx['name']} 失败</comment>");
+            }
+
+            // 根节点（嵌套集合左右值）；固定 _id，集合间相互隔离不冲突
+            $rootId = new \MongoDB\BSON\ObjectId('58514b454a495f524f4f5430');
+            $countCmd = new \MongoDB\Driver\Command([
+                'count' => $collection,
+                'query' => ['_id' => $rootId],
+            ]);
+            $cnt = $manager->executeCommand($database, $countCmd)->toArray();
+            $exists = !empty($cnt) && intval($cnt[0]->n) > 0;
+            if (!$exists) {
+                $bulk = new \MongoDB\Driver\BulkWrite();
+                $bulk->insert([
+                    '_id'         => $rootId,
+                    'name'        => 'XQKEJI_TREE_ROOT',
+                    'parent_id'   => '',
+                    'depth'       => 0,
+                    'left_value'  => 1,
+                    'right_value' => 2,
+                    'create_time' => time(),
+                    'update_time' => time(),
+                ]);
+                $manager->executeBulkWrite("{$database}.{$collection}", $bulk);
+                $this->io->write("<info>✓ 初始化集合 {$collection} 根节点成功</info>");
+            } else {
+                $this->io->write("<comment>⚠ 集合 {$collection} 根节点已存在，跳过</comment>");
+            }
+        } catch (\Throwable $e) {
+            $this->io->write("<comment>⚠ 树集合 {$collection} 初始化失败（不影响文件生成）：{$e->getMessage()}</comment>");
         }
     }
 

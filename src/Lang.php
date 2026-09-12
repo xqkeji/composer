@@ -93,7 +93,7 @@ class Lang
             return;
         }
 
-        $subject = $controllerTitle ?: self::toCamelCase($controller);
+        $subject = ($controllerTitle !== null && $controllerTitle !== '') ? $controllerTitle : self::toCamelCase($controller);
         $prefix = "{$module} {$controller}";
 
         // 控制器菜单项标题（{控制器中文名}管理）自映射到语言文件，与菜单实际显示的标题保持一致
@@ -123,7 +123,10 @@ class Lang
             : (self::toCamelCase($controller) . '管理'));
 
         // 控制器显示名称（{模块} module {控制器} => {控制器中文名}），供框架 lang() 解析控制器名
-        self::set($lang, "{$module} module {$controller}", $subject);
+        // 仅在显式指定或可读取到中文名时写入；空白（未指定且 lang 中无记录）则不写，避免残留驼峰默认名
+        if ($controllerTitle !== null && $controllerTitle !== '') {
+            self::set($lang, "{$module} module {$controller}", $controllerTitle);
+        }
 
         self::save($langFile, $lang);
         $io->write("<info>✓ 已更新语言配置: $langFile</info>");
@@ -189,19 +192,66 @@ class Lang
     }
 
     /**
+     * 显式写入单条语言配置（覆盖式）。
+     *
+     * 用于 -t 显式指定中文名：用户明确给定即以设置值为准，覆盖已有值。
+     * 键统一 strtolower，确保 zh_cn.php 下标全小写（值不改写）。
+     */
+    public static function put(IOInterface $io, string $modulePath, string $key, string $value): void
+    {
+        $key = strtolower($key);
+        $langFile = self::langFile($modulePath);
+        $lang = self::load($langFile, $io);
+        if ($lang === null) {
+            return;
+        }
+        $lang[$key] = $value;
+        self::save($langFile, $lang);
+        $io->write("<info>✓ 已写入语言配置（覆盖）: $key => $value</info>");
+    }
+
+    /**
+     * 解析中文名优先级（-t 中文名称规则）：
+     *   1. -t 显式设置（非空）：用设置值，并覆盖写入 zh_cn.php（用户明确给定即为准）；
+     *   2. 未设置：试读 zh_cn.php，读到了直接用（不重复写入，原值已是设置值）；
+     *   3. 读不到：返回空串（空白，不写）。
+     *
+     * @param string|null $setTitle 命令行 -t 传入的中文名（可能为空串或 null）
+     * @param string      $key      语言键（统一 strtolower）
+     */
+    public static function resolve(IOInterface $io, string $modulePath, string $key, ?string $setTitle): string
+    {
+        if ($setTitle !== null && $setTitle !== '') {
+            self::put($io, $modulePath, $key, $setTitle);
+            return $setTitle;
+        }
+        $read = self::getValue($modulePath, $key);
+        if ($read !== null && $read !== '') {
+            return $read;
+        }
+        return '';
+    }
+
+    /**
      * 写入模块语言配置
+     *
+     * @param string $moduleTitle 模块显示名（已带「管理」后缀，如 教学管理）；空串表示「空白」不写入
      */
     public static function writeModule(IOInterface $io, string $modulePath, string $module, string $moduleTitle): void
     {
+        if ($moduleTitle === '') {
+            // 空白：不写入，保留 lang 原状（满足「未指定且 lang 无记录则不写」）
+            return;
+        }
         $langFile = self::langFile($modulePath);
         $lang = self::load($langFile, $io);
         if ($lang === null) {
             return;
         }
 
-        // 去重：已有非空翻译则保留，不覆盖（满足「本来有翻译的不用加」）
-        self::set($lang, "{$module} module title", $moduleTitle);
-        self::set($lang, "{$module} module auth", $moduleTitle);
+        // 显式设置以覆盖式写入（用户明确给定即为准）
+        $lang["{$module} module title"] = $moduleTitle;
+        $lang["{$module} module auth"] = $moduleTitle;
         // 菜单分组标题自映射（键即中文标题，供框架 lang() 解析，可后续翻译覆盖；缺省即显示中文本身）
         self::set($lang, $moduleTitle, $moduleTitle);
 

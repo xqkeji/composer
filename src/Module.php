@@ -272,32 +272,54 @@ class Module implements EventSubscriberInterface
     }
 
     /**
-     * 写入模块中文名称到 menu.php 与 lang/zh_cn.php
+     * 写入模块中文名称到 menu.php 与 lang/zh_cn.php（启用 -t 中文名优先级）
      *
-     * 传入的中文名作为模块主体名，菜单与语言文件中统一显示为「{中文名}管理」
+     * 优先级：-t 显式设置 > 读取 lang > 空白
+     *   -t 有设置：用设置值（覆盖式写入 lang + menu）
+     *   -t 未设置：试读 {模块} module title 键，读到了直接用（menu 同步）
+     *   读不到：空白，不写入
      */
     private function updateModuleTitle(string $modulePath, string $moduleName, ?string $title): void
     {
-        if ($title === null || $title === '') {
+        $key = "{$moduleName} module title";
+
+        if ($title !== null && $title !== '') {
+            // -t 显式设置：用设置值（覆盖式写入 lang + menu）
+            $displayTitle = $this->appendManage($title);
+            Lang::writeModule($this->io, $modulePath, $moduleName, $displayTitle);
+            $this->updateMenuModuleTitle($modulePath, $displayTitle);
             return;
         }
 
+        // -t 未设置：试读 lang
+        $read = Lang::getValue($modulePath, $key);
+        if ($read !== null && $read !== '') {
+            // 读到了直接用（已在 lang，menu 同步）
+            $this->updateMenuModuleTitle($modulePath, $read);
+            return;
+        }
+
+        // 读不到：空白，不写入
+    }
+
+    /**
+     * 同步菜单配置中所有分组的标题（模块中文显示名，已带「管理」后缀）
+     */
+    private function updateMenuModuleTitle(string $modulePath, string $displayTitle): void
+    {
         $menuFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'menu.php';
         if (is_file($menuFile)) {
             $menuConfig = include $menuFile;
             if (is_array($menuConfig)) {
-                $menuTitle = $this->appendManage($title);
                 foreach (array_keys($menuConfig) as $entry) {
                     if (is_array($menuConfig[$entry])) {
-                        $menuConfig[$entry]['title'] = $menuTitle;
+                        $menuConfig[$entry]['title'] = $displayTitle;
                     }
                 }
                 file_put_contents($menuFile, "<?php\r\nreturn " . self::exportArray($menuConfig) . ";");
                 $this->io->write("<info>✓ 已更新菜单配置（模块名称）: $menuFile</info>");
             }
         }
-
-        Lang::writeModule($this->io, $modulePath, $moduleName, $this->appendManage($title));
     }
 
     /**

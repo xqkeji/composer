@@ -66,8 +66,10 @@ class Controller
             $actions = $authEntry === 'guest' ? self::DEFAULT_GUEST_ACTIONS : self::DEFAULT_ACTIONS;
         }
         
-        // 中文名称（用于菜单与语言文件），未指定时回退为大驼峰类名
-        $controllerTitle = ($title !== null && $title !== '') ? $title : $this->toCamelCase($controllerName);
+        // 中文名称优先级（-t 显式设置 > 读取 lang > 空白）：
+        //   -t 有设置：用设置值并覆盖写入 zh_cn.php
+        //   -t 未设置：试读 {模块} module {控制器} 键，读到了直接用；读不到则为空白
+        $controllerTitle = Lang::resolve($this->io, $modulePath, "{$currentModule} module {$configName}", $title);
 
         // 创建控制器类（低代码默认使用虚拟控制器，仅 --file 时才生成实体文件）
         if ($createFile) {

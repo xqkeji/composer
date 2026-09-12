@@ -160,6 +160,18 @@ EOF
         $controllerName = $this->toSnakeCase($currentController);
         $controllerTitle = Lang::readControllerTitle($modulePath, $currentModule, $controllerName);
         $title = $input->getOption('title');
+
+        // 动作 -t 中文名优先级：-t 显式设置 > 读取 lang > 默认动作名
+        $actionTitleKey = "{$currentModule} {$controllerName} {$actionName} title";
+        if ($title !== null && $title !== '') {
+            // 显式设置：覆盖写入
+            Lang::put($this->getIO(), $modulePath, $actionTitleKey, $title);
+            $actionTitles = [$actionName => $title];
+        } else {
+            $read = Lang::getValue($modulePath, $actionTitleKey);
+            $actionTitles = ($read !== null && $read !== '') ? [$actionName => $read] : [];
+        }
+
         Lang::writeActions(
             $this->getIO(),
             $modulePath,
@@ -167,7 +179,7 @@ EOF
             $controllerName,
             [$actionName],
             $controllerTitle,
-            ($title !== null && $title !== '') ? [$actionName => $title] : []
+            $actionTitles
         );
 
         return 0;

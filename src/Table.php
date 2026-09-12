@@ -467,7 +467,7 @@ class Table
         $controller->initControllerConfig(
             $modulePath,
             $configName,
-            ['admin', 'add', 'edit', 'delete', 'move'],
+            ['admin', 'edit', 'delete', 'change', 'add', 'move'],
             $tableCn
         );
     }

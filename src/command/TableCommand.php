@@ -18,7 +18,7 @@ class TableCommand extends BaseCommand
             ->setDescription('创建表格类')
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
             ->addArgument('elements', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '表格元素列表')
-            ->addOption('tree', 't', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
+            ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
             ->setHelp(<<<'EOF'
 创建表格类和表格元素
 
@@ -31,7 +31,7 @@ class TableCommand extends BaseCommand
   composer xqkeji:table User id Username SwitchCheck LoginTime EditDelete
 
   <comment># 创建树形表格（继承 TreegridTable）</comment>
-  composer xqkeji:table User -t id Username SwitchCheck LoginTime EditDelete
+  composer xqkeji:table User -T id Username SwitchCheck LoginTime EditDelete
 
   <comment># 创建表格（创建新元素时交互式输入中文名称）</comment>
   composer xqkeji:table User id username switch_check login_time edit_delete
@@ -45,7 +45,8 @@ class TableCommand extends BaseCommand
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
-  - 使用 -t 创建树形表格（继承 TreegridTable），不使用则继承 Table
+  - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
+  - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）
   - 需要先使用 xqkeji:use 切换到目标模块
 
 EOF

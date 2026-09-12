@@ -20,7 +20,7 @@ class ElementCommand extends BaseCommand
             ->addOption('create', 'c', InputOption::VALUE_NONE, '创建元素')
             ->addOption('edit', 'e', InputOption::VALUE_NONE, '修改元素')
             ->addOption('remove', 'r', InputOption::VALUE_NONE, '删除元素')
-            ->addOption('type', 't', InputOption::VALUE_OPTIONAL, '指定元素类型（与 -c/-e 配合），不带值则弹出选择列表')
+            ->addOption('type', 'y', InputOption::VALUE_OPTIONAL, '指定元素类型（与 -c/-e 配合），不带值则弹出选择列表')
             ->addOption('list', 'l', InputOption::VALUE_OPTIONAL, '项目列表（Select/Check/Radio），格式：值1|文本1,值2|文本2')
             ->addOption('default', 'D', InputOption::VALUE_OPTIONAL, '默认值')
             ->addOption('model', 'm', InputOption::VALUE_OPTIONAL, '模型名（Select/Check/Radio），从模型动态加载项目列表')
@@ -33,32 +33,32 @@ class ElementCommand extends BaseCommand
   composer xqkeji:element Username
 
   <comment># 创建元素（指定类型）</comment>
-  composer xqkeji:element Username -c -t=Text
-  composer xqkeji:element Username -c -t Text
+  composer xqkeji:element Username -c -y=Text
+  composer xqkeji:element Username -c -y Text
 
-  <comment># 创建元素（-t 不带值，弹出类型选择列表）</comment>
-  composer xqkeji:element Username -c -t
+  <comment># 创建元素（-y 不带值，弹出类型选择列表）</comment>
+  composer xqkeji:element Username -c -y
 
   <comment># 创建 Select 元素（带项目列表和默认值，| 分隔符）</comment>
-  composer xqkeji:element Status -c -t=Select -l "1|启用,0|禁用" -D=1
+  composer xqkeji:element Status -c -y=Select -l "1|启用,0|禁用" -D=1
 
   <comment># 创建 Select 元素（= 分隔符）</comment>
-  composer xqkeji:element Status -c -t=Select -l "1=启用,0=禁用" -D=1
+  composer xqkeji:element Status -c -y=Select -l "1=启用,0=禁用" -D=1
 
   <comment># 创建 Check 元素（带项目列表）</comment>
-  composer xqkeji:element Roles -c -t=Check -l "1|管理员,2|编辑,3|用户"
+  composer xqkeji:element Roles -c -y=Check -l "1|管理员,2|编辑,3|用户"
 
   <comment># 创建 Radio 元素（带项目列表和默认值）</comment>
-  composer xqkeji:element Gender -c -t=Radio -l "1|男,2|女" -D=1
+  composer xqkeji:element Gender -c -y=Radio -l "1|男,2|女" -D=1
 
   <comment># 创建 Select 元素（从模型动态加载项目列表）</comment>
-  composer xqkeji:element Status -c -t=Select -m=category_type
+  composer xqkeji:element Status -c -y=Select -m=category_type
 
   <comment># 修改元素（指定类型）</comment>
-  composer xqkeji:element Username -e -t=Select
+  composer xqkeji:element Username -e -y=Select
 
-  <comment># 修改元素（-t 不带值，弹出类型选择列表）</comment>
-  composer xqkeji:element Username -e -t
+  <comment># 修改元素（-y 不带值，弹出类型选择列表）</comment>
+  composer xqkeji:element Username -e -y
 
   <comment># 删除元素</comment>
   composer xqkeji:element Username -r
@@ -68,10 +68,10 @@ class ElementCommand extends BaseCommand
   - 元素名称支持大小写，自动转为大驼峰（如 username → Username、user_name → UserName）
   - 表单元素创建在当前模块的 form/element/ 目录下
   - 表格元素创建在当前模块的 table/element/ 目录下
-  - 创建/修改前需要先使用 xqkeji:use -f（表单模式）或 -t（表格模式）设置当前模式
+  - 创建/修改前需要先使用 xqkeji:use -f（表单模式）或 -T（表格模式）设置当前模式
   - 不指定 -c/-e/-r 时，默认为创建操作
-  - 使用 -t 不带值会强制弹出类型选择列表（交互模式）
-  - 使用 -t=类型名 直接指定类型
+  - 使用 -y 不带值会强制弹出类型选择列表（交互模式）
+  - 使用 -y=类型名 直接指定类型
   - 使用 -l 指定项目列表（Select/Check/Radio 类型），格式：值1|文本1,值2|文本2 或 值1=文本1,值2=文本2
   - 使用 -D 指定默认值
   - 使用 -m 指定模型名（Select/Check/Radio），从模型动态加载项目列表（需交互设置字段名）
@@ -131,7 +131,7 @@ EOF
         $name = null;
         $action = 'create'; // 默认创建
         $specifiedType = null;
-        $hasTypeFlag = false; // 是否使用了 -t 参数（不带值）
+        $hasTypeFlag = false; // 是否使用了 -y 参数（不带值）
         $items = null;
         $hasItemsFlag = false;
         $defaultValue = null;
@@ -186,8 +186,8 @@ EOF
                 continue;
             }
 
-            // 解析 -t / --type
-            if ($token === '-t' || $token === '--type') {
+            // 解析 -y / --type
+            if ($token === '-y' || $token === '--type') {
                 $hasTypeFlag = true;
                 $i++;
                 // 检查下一个token是否是类型值（不是另一个选项）
@@ -198,8 +198,8 @@ EOF
                 continue;
             }
 
-            // 解析 -t=类型名 / --type=类型名
-            if (strpos($token, '-t=') === 0) {
+            // 解析 -y=类型名 / --type=类型名
+            if (strpos($token, '-y=') === 0) {
                 $hasTypeFlag = true;
                 $specifiedType = substr($token, 3);
                 $i++;
@@ -298,7 +298,7 @@ EOF
             $i++;
         }
 
-        // -t 不带值 → 设置为空字符串，表示需要弹出选择列表
+        // -y 不带值 → 设置为空字符串，表示需要弹出选择列表
         if ($hasTypeFlag && $specifiedType === null) {
             $specifiedType = '';
         }

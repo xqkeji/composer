@@ -20,7 +20,7 @@ class UseCommand extends BaseCommand
             ->addOption('module', 'm', InputOption::VALUE_NONE, '切换模块（默认）')
             ->addOption('controller', 'c', InputOption::VALUE_NONE, '切换控制器')
             ->addOption('form', 'f', InputOption::VALUE_NONE, '设置为表单模式')
-            ->addOption('table', 't', InputOption::VALUE_NONE, '设置为表格模式')
+            ->addOption('table', 'T', InputOption::VALUE_NONE, '设置为表格模式')
             ->setHelp(<<<'EOF'
 切换当前工作上下文（模块、控制器或模式）
 
@@ -38,7 +38,7 @@ class UseCommand extends BaseCommand
   composer xqkeji:use -f
 
   <comment># 设置为表格模式（xqkeji:element 创建表格元素）</comment>
-  composer xqkeji:use -t
+  composer xqkeji:use -T
 
   <comment># 显示当前上下文</comment>
   composer xqkeji:use
@@ -48,7 +48,7 @@ class UseCommand extends BaseCommand
   - 不带参数时显示当前上下文
   - 默认切换模块（-m 可省略）
   - 使用 -c 切换控制器
-  - 使用 -f 设置为表单模式，-t 设置为表格模式
+  - 使用 -f 设置为表单模式，-T 设置为表格模式
   - 控制器名称支持小写加下划线（如 user_type），会自动转换为大驼峰命名（UserType）
   - 切换控制器前必须先切换到模块
 

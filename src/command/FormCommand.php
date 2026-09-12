@@ -18,7 +18,7 @@ class FormCommand extends BaseCommand
             ->setDescription('创建表单类')
             ->addArgument('name', InputArgument::OPTIONAL, '表单名称')
             ->addArgument('elements', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '表单元素列表')
-            ->addOption('tab', 't', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
+            ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
             ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
             ->setHelp(<<<'EOF'
 创建表单类和表单元素
@@ -32,13 +32,13 @@ class FormCommand extends BaseCommand
   composer xqkeji:form User Username Password Email
 
   <comment># 创建Tab表单（Tab英文名称自动生成）</comment>
-  composer xqkeji:form User -t "基本信息" Username Password -t "授权信息" Auth Csrf
+  composer xqkeji:form User -b "基本信息" Username Password -b "授权信息" Auth Csrf
 
   <comment># 创建Tab表单（带全局元素）</comment>
-  composer xqkeji:form User -t "基本信息" username password -t "授权信息" auth csrf -g submit_reset
+  composer xqkeji:form User -b "基本信息" username password -b "授权信息" auth csrf -g submit_reset
 
   <comment># 创建Tab表单（中文名称不加引号）</comment>
-  composer xqkeji:form User -t 基本信息 username password -t 授权信息 auth csrf
+  composer xqkeji:form User -b 基本信息 username password -b 授权信息 auth csrf
 
 <info>说明：</info>
 
@@ -49,7 +49,7 @@ class FormCommand extends BaseCommand
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
-  - 使用 -t/--tab 创建Tab切换效果的表单（继承 TabForm）
+  - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
   - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
   - Tab中文名称可加引号也可不加引号
   - 使用 -g/--global 添加Tab之外的全局元素
@@ -81,7 +81,7 @@ EOF
         list($tabGroups, $globalElements) = $this->parseTabAndGlobal($input, $name);
 
         // Tab/全局表单的元素已通过 parseTabAndGlobal 从 argv 解析到 tabGroups/globalElements；
-        // 普通表单（无 -t/-g）的元素来自命令行位置参数 elements，需传入 createForm，否则 $el 为空
+        // 普通表单（无 -b/-g）的元素来自命令行位置参数 elements，需传入 createForm，否则 $el 为空
         $isTabForm = !empty($tabGroups) || !empty($globalElements);
         $elements = $input->getArgument('elements') ?? [];
 
@@ -95,7 +95,7 @@ EOF
      * 从原始命令行参数中解析Tab组和全局元素
      * 通过 $_SERVER['argv'] 获取原始参数，避免 Symfony 解析干扰
      *
-     * 格式：composer xqkeji:form FormName -t "Tab中文名称" element1 element2 -t "Tab2中文" el3 el4 -g globalEl1
+     * 格式：composer xqkeji:form FormName -b "Tab中文名称" element1 element2 -b "Tab2中文" el3 el4 -g globalEl1
      * Tab英文名称自动生成：{表单名小写下划线}_tab{序号}
      */
     private function parseTabAndGlobal(InputInterface $input, string $formName): array
@@ -134,19 +134,19 @@ EOF
         while ($i < $count) {
             $token = $tokens[$i];
 
-            // 检测 -t 或 --tab
-            if ($token === '-t' || $token === '--tab') {
+            // 检测 -b 或 --tab
+            if ($token === '-b' || $token === '--tab') {
                 $i++;
                 // 第一个参数是Tab中文名称（可带引号也可不带）
                 $tabText = $tokens[$i] ?? '';
                 $tabIndex++;
 
-                // 收集tab元素直到下一个 -t/--tab/-g/--global 或结束
+                // 收集tab元素直到下一个 -b/--tab/-g/--global 或结束
                 $tabElements = [];
                 $i++;
                 while ($i < $count) {
                     $nextToken = $tokens[$i];
-                    if ($nextToken === '-t' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
+                    if ($nextToken === '-b' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
                         break;
                     }
                     // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头
@@ -174,7 +174,7 @@ EOF
                 $i++;
                 while ($i < $count) {
                     $nextToken = $tokens[$i];
-                    if ($nextToken === '-t' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
+                    if ($nextToken === '-b' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
                         break;
                     }
                     // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头

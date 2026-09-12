@@ -78,6 +78,11 @@ class Table
         // 创建表格类
         $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree);
 
+        // 树形表格：自动检查并复制对应的树状控制器动作类（controller/{表格名大驼峰}/）
+        if ($isTree) {
+            $this->ensureTreeController($modulePath, $currentModule, $className);
+        }
+
         // 自动切换为表格模式
         $this->context->switchMode('table');
     }
@@ -258,6 +263,60 @@ class Table
         }
         
         return "<?php\nnamespace {$namespace};\n\nuse {$useTable};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$foot = '@Foot';\n    \n    // 表格元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+    }
+
+    /**
+     * 树形表格：自动检查并复制对应的树状控制器动作类
+     *
+     * 目标目录：{模块路径}/controller/{表格名大驼峰}/
+     * 源模板：插件自身的 src/example/src/controller/tree/
+     * 复制时替换命名空间占位符 {MODULE_NAME} -> 当前模块、{CONTROLLER_NAME} -> 表格名大驼峰
+     */
+    private function ensureTreeController(string $modulePath, string $currentModule, string $className): void
+    {
+        $controllerDir = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className;
+
+        if (is_dir($controllerDir)) {
+            $this->io->write("<comment>⚠ 树状控制器目录已存在，跳过复制: {$controllerDir}</comment>");
+            return;
+        }
+
+        // 插件自身的 example 树状控制器模板目录（与 Table.php 同级的 src 下）
+        $treeTemplateDir = __DIR__ . DIRECTORY_SEPARATOR . 'example' . DIRECTORY_SEPARATOR
+            . 'src' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'tree';
+
+        if (!is_dir($treeTemplateDir)) {
+            $this->io->write("<error>未找到树状控制器模板目录: {$treeTemplateDir}</error>");
+            return;
+        }
+
+        if (!mkdir($controllerDir, 0755, true) && !is_dir($controllerDir)) {
+            $this->io->write("<error>创建树状控制器目录失败: {$controllerDir}</error>");
+            return;
+        }
+
+        $files = glob($treeTemplateDir . DIRECTORY_SEPARATOR . '*.php') ?: [];
+        if (empty($files)) {
+            $this->io->write("<comment>⚠ 树状控制器模板目录为空，未复制任何文件: {$treeTemplateDir}</comment>");
+            return;
+        }
+
+        foreach ($files as $templateFile) {
+            $content = file_get_contents($templateFile);
+            if ($content === false) {
+                $this->io->write("<error>读取树状控制器模板失败: {$templateFile}</error>");
+                continue;
+            }
+            // 替换命名空间占位符
+            $content = str_replace(
+                ['{MODULE_NAME}', '{CONTROLLER_NAME}'],
+                [$currentModule, $className],
+                $content
+            );
+            $target = $controllerDir . DIRECTORY_SEPARATOR . basename($templateFile);
+            file_put_contents($target, $content);
+            $this->io->write("<info>✓ 已复制树状控制器动作类: {$target}</info>");
+        }
     }
 
     /**

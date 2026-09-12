@@ -61,6 +61,9 @@ class Table
 
         // 表格元素引用（生成 $el 用）
         $elementRefs = [];
+        // 表格中文名（两分支共用：树表经 resolveTreeTableCn 交互解析；普通表经 Lang::resolve 解析，作为控制器显示名）
+        $tableCn = '';
+
         if ($isTree) {
             if (!empty($elements)) {
                 $this->io->write("<comment>⚠ 树状表格使用内置默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），已忽略命令行传入的元素参数</comment>");
@@ -92,28 +95,32 @@ class Table
                     }
                 }
             }
+            // 普通表格中文名：统一优先级（设置 > 读取 lang > 交互提示），作为控制器显示名
+            $tableCn = Lang::resolve(
+                $this->io,
+                $modulePath,
+                "{$currentModule} module " . $this->toSnakeCase($tableName),
+                null,
+                "请输入表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
+                $className
+            );
         }
 
         // 创建表格类
         $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree);
 
-        // 树形表格：自动检查并复制对应的树状控制器动作类（controller/{表格名全小写蛇形}/）
+        // 自动创建控制器（树表与普通表都创建，但动作/元素不同）：
+        //   - 树表：复制 tree 动作类（admin/add/move）+ 初始化集合，动作含 move、复制 tree 元素
+        //   - 普通表：创建单文件控制器（admin/add/edit/delete）+ acl/menu/lang 初始化，
+        //            不含 move、不复制 tree 元素、不初始化树集合
         if ($isTree) {
-            $this->ensureTreeController($modulePath, $currentModule, $tableName);
+            $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn);
             // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
             // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
             $this->seedTreeCollection($configName);
+        } else {
+            $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn);
         }
-
-        // 表格显示名统一解析中文名（设置 > 读取 lang > 交互提示；表格名=控制器名时共享同一键，自然复用已有中文）
-        Lang::resolve(
-            $this->io,
-            $modulePath,
-            "{$currentModule} module " . $this->toSnakeCase($tableName),
-            null,
-            "请输入表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
-            $className
-        );
 
         // 自动切换为表格模式
         $this->context->switchMode('table');
@@ -461,6 +468,45 @@ class Table
             $modulePath,
             $configName,
             ['admin', 'add', 'edit', 'delete', 'move'],
+            $tableCn
+        );
+    }
+
+    /**
+     * 普通（非树状）表格：自动创建单文件控制器并补齐 acl/menu/lang 初始化
+     *
+     * 与普通 xqkeji:controller --file 创建保持一致：
+     *   - 创建 controller/{大驼峰表名}.php（继承 xqkeji\mvc\Controller，动作由框架基类按约定解析，无需单独动作类文件）
+     *   - 动作集为 admin/add/edit/delete（不含树表专属的 move）
+     *   - 不复制 tree 元素、不初始化树集合
+     * 控制器文件已存在则幂等跳过（仅补齐配置初始化）。
+     *
+     * @param string $tableCn 表格中文名（作为控制器显示名，来自 Lang::resolve）
+     */
+    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn): void
+    {
+        $className = $this->toCamelCase($tableName);
+        $controllerFile = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
+
+        if (!is_file($controllerFile)) {
+            $namespace = "xqkeji\\app\\{$currentModule}\\controller";
+            $content = "<?php\nnamespace {$namespace};\n\nuse xqkeji\\mvc\\Controller;\n\nclass {$className} extends Controller\n{\n\n}\n";
+            if (!is_dir(dirname($controllerFile))) {
+                mkdir(dirname($controllerFile), 0755, true);
+            }
+            file_put_contents($controllerFile, $content);
+            $this->io->write("<info>✓ 已创建普通表格控制器: {$controllerFile}</info>");
+        } else {
+            $this->io->write("<comment>⚠ 普通表格控制器已存在，跳过创建（仅补齐配置初始化）: {$controllerFile}</comment>");
+        }
+
+        // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
+        // 动作集不含树表专属的 move；普通表中文名作为控制器显示名
+        $controller = new Controller($this->io, $this->composer);
+        $controller->initControllerConfig(
+            $modulePath,
+            $this->toSnakeCase($tableName),
+            ['admin', 'add', 'edit', 'delete'],
             $tableCn
         );
     }

@@ -112,9 +112,15 @@ class Form
             $this->createFormFile($formPath, $className, $configName, $elementRefs, $currentModule);
         }
 
-        // 表单显示名复用控制器名中文（共享键 {模块} module {表单名蛇形}）；
-        // 表单名=控制器名时该键与控制器显示名键一致，自然复用已有中文、不重复
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} module {$configName}", $className);
+        // 表单显示名统一解析中文名（设置 > 读取 lang > 交互提示；表单名=控制器名时共享同一键，自然复用已有中文）
+        Lang::resolve(
+            $this->io,
+            $modulePath,
+            "{$currentModule} module {$configName}",
+            null,
+            "请输入表单 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
 
         // 自动切换为表单模式
         $this->context->switchMode('form');
@@ -144,29 +150,27 @@ class Form
             return '~' . $className;
         }
 
-        // 3. 创建新元素 - 只在创建时询问中文名称
+        // 3. 创建新元素 - 解析中文名称（统一优先级：设置 > 读取 lang > 交互提示）
         $elementPath = $modulePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . 'element';
         if (!is_dir($elementPath)) {
             mkdir($elementPath, 0755, true);
         }
 
-        // 交互式询问中文名称
-        $elementText = '';
-        if ($this->io->isInteractive()) {
-            $elementText = $this->io->ask(
-                "<question>请输入元素 '$configName' 的中文名称（留空使用默认值 '$className'）:</question> ",
-                $className
-            );
-        }
-
-        // 如果没有提供中文名称，使用默认值
-        if (empty($elementText)) {
+        // 元素中文名统一解析（键全小写蛇形）；lang 已记录则直接复用，否则交互提示
+        $elementText = Lang::resolve(
+            $this->io,
+            $modulePath,
+            "{$currentModule} {$configName} name",
+            null,
+            "请输入元素 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
+        // 兜底确保非空（非交互或留空回退 $className）
+        if ($elementText === '') {
             $elementText = $className;
         }
 
         $this->createElementFile($elementPath, $className, $configName, $elementText);
-        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖；键全小写蛇形）
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$configName} name", $elementText);
         $this->io->write("<info>✓ 已创建表单元素: $className</info>");
         return '~' . $className;
     }

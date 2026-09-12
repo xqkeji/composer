@@ -274,32 +274,41 @@ class Module implements EventSubscriberInterface
     /**
      * 写入模块中文名称到 menu.php 与 lang/zh_cn.php（启用 -t 中文名优先级）
      *
-     * 优先级：-t 显式设置 > 读取 lang > 空白
+     * 优先级：-t 显式设置 > 读取 lang > 交互提示用户设置
      *   -t 有设置：用设置值（覆盖式写入 lang + menu）
      *   -t 未设置：试读 {模块} module title 键，读到了直接用（menu 同步）
-     *   读不到：空白，不写入
+     *   读不到：交互提示用户输入（非交互回退默认名），再写入
      */
     private function updateModuleTitle(string $modulePath, string $moduleName, ?string $title): void
     {
         $key = "{$moduleName} module title";
+        $default = $this->toCamelCase($moduleName);
 
-        if ($title !== null && $title !== '') {
-            // -t 显式设置：用设置值（覆盖式写入 lang + menu）
-            $displayTitle = $this->appendManage($title);
-            Lang::writeModule($this->io, $modulePath, $moduleName, $displayTitle);
-            $this->updateMenuModuleTitle($modulePath, $displayTitle);
-            return;
+        if ($title === null || $title === '') {
+            // -t 未设置：试读 lang
+            $read = Lang::getValue($modulePath, $key);
+            if ($read !== null && $read !== '') {
+                // 读到了直接用（已在 lang，menu 同步）
+                $this->updateMenuModuleTitle($modulePath, $read);
+                return;
+            }
+            // 读不到：交互提示用户设置（非交互回退默认名）
+            $title = $default;
+            if ($this->io->isInteractive()) {
+                $title = $this->io->ask(
+                    "<question>请输入模块 '{$moduleName}' 的中文名称（留空使用 '{$default}'）：</question> ",
+                    $default
+                );
+            }
+            if ($title === null || $title === '') {
+                $title = $default;
+            }
         }
 
-        // -t 未设置：试读 lang
-        $read = Lang::getValue($modulePath, $key);
-        if ($read !== null && $read !== '') {
-            // 读到了直接用（已在 lang，menu 同步）
-            $this->updateMenuModuleTitle($modulePath, $read);
-            return;
-        }
-
-        // 读不到：空白，不写入
+        // 统一：用设置值（含交互输入/默认）覆盖式写入 lang + menu
+        $displayTitle = $this->appendManage($title);
+        Lang::writeModule($this->io, $modulePath, $moduleName, $displayTitle);
+        $this->updateMenuModuleTitle($modulePath, $displayTitle);
     }
 
     /**

@@ -211,25 +211,46 @@ class Lang
     }
 
     /**
-     * 解析中文名优先级（-t 中文名称规则）：
-     *   1. -t 显式设置（非空）：用设置值，并覆盖写入 zh_cn.php（用户明确给定即为准）；
+     * 解析中文名（统一优先级，适用于模块/控制器/表单/表格/元素/动作）：
+     *   1. 显式设置（-t 非空）：用设置值，并覆盖写入 zh_cn.php（用户明确给定即以设置值为准）；
      *   2. 未设置：试读 zh_cn.php，读到了直接用（不重复写入，原值已是设置值）；
-     *   3. 读不到：返回空串（空白，不写）。
+     *   3. 都没有：交互提示用户设置（交互模式下询问；非交互模式或留空则回退 $default）。
      *
-     * @param string|null $setTitle 命令行 -t 传入的中文名（可能为空串或 null）
-     * @param string      $key      语言键（统一 strtolower）
+     * 第三优先级改为「交互提示」而非空白：需要中文名、既未显式设置又读不到时，
+     * 主动询问用户，避免产生无中文名/驼峰默认名的脏数据。
+     *
+     * @param string|null $setTitle     命令行 -t 传入的中文名（可能为空串或 null）
+     * @param string      $key          语言键（统一 strtolower）
+     * @param string|null $promptLabel  交互提示文案（如 "请输入表单 'xxx' 的中文名称："）；传 null 则不交互
+     * @param string      $default      非交互模式或留空时的回退默认值（通常为类名/蛇形名）
      */
-    public static function resolve(IOInterface $io, string $modulePath, string $key, ?string $setTitle): string
+    public static function resolve(IOInterface $io, string $modulePath, string $key, ?string $setTitle, ?string $promptLabel = null, string $default = ''): string
     {
+        // 1. 显式设置（非空）：用设置值并覆盖写入
         if ($setTitle !== null && $setTitle !== '') {
             self::put($io, $modulePath, $key, $setTitle);
             return $setTitle;
         }
+
+        // 2. 试读 lang：读到了直接用（不重复写）
         $read = self::getValue($modulePath, $key);
         if ($read !== null && $read !== '') {
             return $read;
         }
-        return '';
+
+        // 3. 都没有：交互提示用户设置；非交互或留空则回退默认
+        $value = $default;
+        if ($io->isInteractive() && $promptLabel !== null) {
+            $asked = $io->ask("<question>{$promptLabel}</question> ", $default);
+            if ($asked !== null && $asked !== '') {
+                $value = $asked;
+            }
+        }
+        if ($value !== '') {
+            // 去重写入（刚确认 lang 中为空，必然写入）
+            self::ensureName($io, $modulePath, $key, $value);
+        }
+        return $value;
     }
 
     /**

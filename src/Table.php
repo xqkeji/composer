@@ -105,9 +105,15 @@ class Table
             $this->seedTreeCollection($configName);
         }
 
-        // 表格显示名复用控制器名中文（共享键 {模块} module {表名蛇形}）；
-        // 表格名=控制器名时该键与控制器显示名键一致，自然复用已有中文、不重复
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} module " . $this->toSnakeCase($tableName), $className);
+        // 表格显示名统一解析中文名（设置 > 读取 lang > 交互提示；表格名=控制器名时共享同一键，自然复用已有中文）
+        Lang::resolve(
+            $this->io,
+            $modulePath,
+            "{$currentModule} module " . $this->toSnakeCase($tableName),
+            null,
+            "请输入表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
 
         // 自动切换为表格模式
         $this->context->switchMode('table');
@@ -137,29 +143,27 @@ class Table
             return '~' . $className;
         }
 
-        // 3. 创建新元素 - 只在创建时询问中文名称
+        // 3. 创建新元素 - 解析中文名称（统一优先级：设置 > 读取 lang > 交互提示）
         $elementPath = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
         if (!is_dir($elementPath)) {
             mkdir($elementPath, 0755, true);
         }
 
-        // 交互式询问中文名称
-        $elementText = '';
-        if ($this->io->isInteractive()) {
-            $elementText = $this->io->ask(
-                "<question>请输入元素 '$configName' 的中文名称（留空使用默认值 '$className'）:</question> ",
-                $className
-            );
-        }
-
-        // 如果没有提供中文名称，使用默认值
-        if (empty($elementText)) {
+        // 元素中文名统一解析（键全小写蛇形）；lang 已记录则直接复用，否则交互提示
+        $elementText = Lang::resolve(
+            $this->io,
+            $modulePath,
+            "{$currentModule} {$configName} name",
+            null,
+            "请输入元素 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
+        // 兜底确保非空（非交互或留空回退 $className）
+        if ($elementText === '') {
             $elementText = $className;
         }
 
         $this->createElementFile($elementPath, $className, $configName, $elementText);
-        // 元素中文名统一留存到 lang/zh_cn.php（去重：已有翻译不覆盖；键全小写蛇形）
-        Lang::ensureName($this->io, $modulePath, "{$currentModule} {$configName} name", $elementText);
         $this->io->write("<info>✓ 已创建表格元素: $className</info>");
         return '~' . $className;
     }
@@ -296,31 +300,24 @@ class Table
     }
 
     /**
-     * 树状表格：解析中文名
+     * 树状表格：解析中文名（统一优先级：设置 > 读取 lang > 交互提示）
      *
      * 优先复用控制器显示名（共享键 {模块} module {表名蛇形}），与表单/表格共享同一中文名；
-     * 该键不存在且为交互模式时询问用户；最终通过 Lang::ensureName 去重写入（已有翻译不覆盖）。
+     * 读不到时交互提示用户设置（非交互回退 $className），并去重写入 lang。
      * 返回的中文名用于替换树元素模板中的 {中文名称}/{中文名} 占位符。
      */
     private function resolveTreeTableCn(string $modulePath, string $currentModule, string $tableName, string $className): string
     {
         $langKey = "{$currentModule} module " . $this->toSnakeCase($tableName);
 
-        $cn = Lang::getValue($modulePath, $langKey);
-        if ($cn === null || $cn === '') {
-            if ($this->io->isInteractive()) {
-                $cn = $this->io->ask(
-                    "<question>请输入树状表格 '$tableName' 的中文名称（留空使用 '$className'）:</question> ",
-                    $className
-                );
-            }
-        }
-        if (empty($cn)) {
-            $cn = $className;
-        }
-        // 去重写入（已有翻译不覆盖）
-        Lang::ensureName($this->io, $modulePath, $langKey, $cn);
-        return $cn;
+        return Lang::resolve(
+            $this->io,
+            $modulePath,
+            $langKey,
+            null,
+            "请输入树状表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
     }
 
     /**

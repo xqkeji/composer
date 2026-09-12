@@ -43,6 +43,8 @@ class Controller
 
         // 转换为小写下划线格式，用于配置文件
         $configName = $this->toSnakeCase($controllerName);
+        // 大驼峰类名（用于交互提示的默认中文名）
+        $className = $this->toCamelCase($controllerName);
 
         // 获取当前模块
         $currentModule = $this->context->getCurrentModule();
@@ -66,10 +68,18 @@ class Controller
             $actions = $authEntry === 'guest' ? self::DEFAULT_GUEST_ACTIONS : self::DEFAULT_ACTIONS;
         }
         
-        // 中文名称优先级（-t 显式设置 > 读取 lang > 空白）：
+        // 中文名称统一优先级（-t 显式设置 > 读取 lang > 交互提示用户设置）：
         //   -t 有设置：用设置值并覆盖写入 zh_cn.php
-        //   -t 未设置：试读 {模块} module {控制器} 键，读到了直接用；读不到则为空白
-        $controllerTitle = Lang::resolve($this->io, $modulePath, "{$currentModule} module {$configName}", $title);
+        //   -t 未设置：试读 {模块} module {控制器} 键，读到了直接用（不重复写）
+        //   都读不到：交互提示用户输入（非交互回退 $className）
+        $controllerTitle = Lang::resolve(
+            $this->io,
+            $modulePath,
+            "{$currentModule} module {$configName}",
+            $title,
+            "请输入控制器 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
+            $className
+        );
 
         // 创建控制器类（低代码默认使用虚拟控制器，仅 --file 时才生成实体文件）
         if ($createFile) {

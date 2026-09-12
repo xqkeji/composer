@@ -161,16 +161,19 @@ EOF
         $controllerTitle = Lang::readControllerTitle($modulePath, $currentModule, $controllerName);
         $title = $input->getOption('title');
 
-        // 动作 -t 中文名优先级：-t 显式设置 > 读取 lang > 默认动作名
+        // 动作 -t 中文名统一优先级：-t 显式设置 > 读取 lang > 交互提示用户设置
         $actionTitleKey = "{$currentModule} {$controllerName} {$actionName} title";
-        if ($title !== null && $title !== '') {
-            // 显式设置：覆盖写入
-            Lang::put($this->getIO(), $modulePath, $actionTitleKey, $title);
-            $actionTitles = [$actionName => $title];
-        } else {
-            $read = Lang::getValue($modulePath, $actionTitleKey);
-            $actionTitles = ($read !== null && $read !== '') ? [$actionName => $read] : [];
-        }
+        $subject = ($controllerTitle !== null && $controllerTitle !== '') ? $controllerTitle : $controllerClassName;
+        $defaultTitle = Lang::actionTitle($actionName, $subject);
+        $resolvedTitle = Lang::resolve(
+            $this->getIO(),
+            $modulePath,
+            $actionTitleKey,
+            $title,
+            "请输入动作 '{$actionName}' 的中文名称（留空使用 '{$defaultTitle}'）：",
+            $defaultTitle
+        );
+        $actionTitles = [$actionName => $resolvedTitle];
 
         Lang::writeActions(
             $this->getIO(),

@@ -17,7 +17,7 @@ class TableCommand extends BaseCommand
         $this->setName('xqkeji:table')
             ->setDescription('创建表格类')
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
-            ->addArgument('elements', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '表格元素列表')
+            ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）')
             ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
             ->setHelp(<<<'EOF'
 创建表格类和表格元素
@@ -28,18 +28,21 @@ class TableCommand extends BaseCommand
   composer xqkeji:table User
 
   <comment># 创建普通表格（带元素列表）</comment>
-  composer xqkeji:table User id Username SwitchCheck LoginTime EditDelete
+  composer xqkeji:table User -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
+  composer xqkeji:table User -e id,Username,SwitchCheck,LoginTime,EditDelete
 
   <comment># 创建树形表格（继承 TreegridTable）</comment>
-  composer xqkeji:table User -T id Username SwitchCheck LoginTime EditDelete
+  composer xqkeji:table User -T -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
 
   <comment># 创建表格（创建新元素时交互式输入中文名称）</comment>
-  composer xqkeji:table User id username switch_check login_time edit_delete
+  composer xqkeji:table User -e id,username,switch_check,login_time,edit_delete
 
 <info>说明：</info>
 
   - 表格名支持大小写，自动转为大驼峰（如 user → User、user_list → UserList）
-  - 表格元素名支持小写加下划线或大驼峰，命令行时可以用小写加_或-的格式
+  - 表格元素名支持小写加下划线或大驼峰，命令行时可以用小写加_或-的格式，自动转为大驼峰
+  - 表格元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e id,Username），创建树表时忽略该参数改用内置默认元素
+  - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Login Time"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
   - 表格类创建在当前模块的 table/ 目录下
   - 表格元素创建在当前模块的 table/element/ 目录下
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
@@ -71,12 +74,29 @@ EOF
             return 1;
         }
         
-        $elements = $input->getArgument('elements');
+        $elements = $this->flattenElements($input->getOption('element'));
         $isTree = $input->getOption('tree');
         
         $table = new Table($this->getIO(), $this->requireComposer());
         $table->createTable($name, $elements, $input, $output, $isTree);
         
         return 0;
+    }
+
+    /**
+     * 把 -e/--element 选项（IS_ARRAY，单个值可能为逗号分隔）展平为元素名数组
+     */
+    private function flattenElements($raw): array
+    {
+        $elements = [];
+        foreach ((array) $raw as $item) {
+            foreach (explode(',', (string) $item) as $el) {
+                $el = trim($el);
+                if ($el !== '') {
+                    $elements[] = $el;
+                }
+            }
+        }
+        return $elements;
     }
 }

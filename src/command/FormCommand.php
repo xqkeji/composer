@@ -17,7 +17,7 @@ class FormCommand extends BaseCommand
         $this->setName('xqkeji:form')
             ->setDescription('创建表单类')
             ->addArgument('name', InputArgument::OPTIONAL, '表单名称')
-            ->addArgument('elements', InputArgument::OPTIONAL | InputArgument::IS_ARRAY, '表单元素列表')
+            ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表单元素列表（可多次使用，或用逗号分隔：Username,Password）')
             ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
             ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
             ->setHelp(<<<'EOF'
@@ -29,16 +29,17 @@ class FormCommand extends BaseCommand
   composer xqkeji:form User
 
   <comment># 创建普通表单（带元素列表）</comment>
-  composer xqkeji:form User Username Password Email
+  composer xqkeji:form User -e Username -e Password -e Email
+  composer xqkeji:form User -e Username,Password,Email
 
   <comment># 创建Tab表单（Tab英文名称自动生成）</comment>
-  composer xqkeji:form User -b "基本信息" Username Password -b "授权信息" Auth Csrf
+  composer xqkeji:form User -b "基本信息" -e Username -e Password -b "授权信息" -e Auth -e Csrf
 
   <comment># 创建Tab表单（带全局元素）</comment>
-  composer xqkeji:form User -b "基本信息" username password -b "授权信息" auth csrf -g submit_reset
+  composer xqkeji:form User -b "基本信息" -e username -e password -b "授权信息" -e auth -e csrf -g -e submit_reset
 
   <comment># 创建Tab表单（中文名称不加引号）</comment>
-  composer xqkeji:form User -b 基本信息 username password -b 授权信息 auth csrf
+  composer xqkeji:form User -b 基本信息 -e username -e password -b 授权信息 -e auth -e csrf
 
 <info>说明：</info>
 
@@ -49,6 +50,8 @@ class FormCommand extends BaseCommand
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
+  - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
+  - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
   - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
   - Tab中文名称可加引号也可不加引号
@@ -77,13 +80,13 @@ EOF
             return 1;
         }
         
-        // 解析Tab和全局元素
+        // 解析Tab和全局元素（从 argv 识别 -b/--tab 与 -g/--global 分组）
         list($tabGroups, $globalElements) = $this->parseTabAndGlobal($input, $name);
 
-        // Tab/全局表单的元素已通过 parseTabAndGlobal 从 argv 解析到 tabGroups/globalElements；
-        // 普通表单（无 -b/-g）的元素来自命令行位置参数 elements，需传入 createForm，否则 $el 为空
+        // Tab/全局表单的元素已通过 parseTabAndGlobal 归入对应分组；
+        // 普通表单（无 -b/-g）的元素来自 -e/--element 选项（支持逗号分隔与重复），需传入 createForm
         $isTabForm = !empty($tabGroups) || !empty($globalElements);
-        $elements = $input->getArgument('elements') ?? [];
+        $elements = $this->flattenElements($input->getOption('element'));
 
         $form = new Form($this->getIO(), $this->requireComposer());
         $form->createForm($name, $isTabForm ? [] : $elements, $input, $output, $tabGroups, $globalElements);
@@ -95,13 +98,16 @@ EOF
      * 从原始命令行参数中解析Tab组和全局元素
      * 通过 $_SERVER['argv'] 获取原始参数，避免 Symfony 解析干扰
      *
-     * 格式：composer xqkeji:form FormName -b "Tab中文名称" element1 element2 -b "Tab2中文" el3 el4 -g globalEl1
+     * 元素通过 -e/--element 指定（可多次使用，也可逗号分隔），并按出现顺序归属到当前 Tab 组或全局；
+     * 普通表单（无 -b/-g）的元素由 -e/--element 选项原生收集（见 flattenElements），不入此处分组。
+     * 格式：composer xqkeji:form FormName -b "Tab中文名称" -e el1 -e el2 -b "Tab2中文" -e el3 -g -e globalEl
      * Tab英文名称自动生成：{表单名小写下划线}_tab{序号}
      */
     private function parseTabAndGlobal(InputInterface $input, string $formName): array
     {
         $tabGroups = [];
         $globalElements = [];
+        $inGlobal = false;
 
         // 从 $_SERVER['argv'] 获取原始命令行参数
         $argv = $_SERVER['argv'] ?? [];
@@ -134,57 +140,47 @@ EOF
         while ($i < $count) {
             $token = $tokens[$i];
 
-            // 检测 -b 或 --tab
-            if ($token === '-b' || $token === '--tab') {
+            // 检测 -e / --element（元素，归入当前 Tab 组或全局；支持 -e=val / --element=val 连写）
+            if ($token === '-e' || $token === '--element') {
                 $i++;
-                // 第一个参数是Tab中文名称（可带引号也可不带）
-                $tabText = $tokens[$i] ?? '';
-                $tabIndex++;
-
-                // 收集tab元素直到下一个 -b/--tab/-g/--global 或结束
-                $tabElements = [];
-                $i++;
-                while ($i < $count) {
-                    $nextToken = $tokens[$i];
-                    if ($nextToken === '-b' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
-                        break;
-                    }
-                    // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头
-                    if (isset($nextToken[0]) && '-' === $nextToken[0]) {
-                        $i++;
-                        continue;
-                    }
-                    $tabElements[] = $nextToken;
+                if ($i < $count && strpos($tokens[$i], '-') !== 0) {
+                    $this->collectTabElements($tokens[$i], $tabGroups, $globalElements, $tabIndex, $inGlobal);
                     $i++;
                 }
-
-                // Tab英文名称自动生成：{表单名}_tab{序号}
-                $tabName = $formSnakeName . '_tab' . $tabIndex;
-
-                $tabGroups[] = [
-                    'name' => $tabName,
-                    'text' => $tabText,
-                    'elements' => $tabElements,
-                ];
+                continue;
+            }
+            if (preg_match('/^-e=(.*)$/s', $token, $m) || preg_match('/^--element=(.*)$/s', $token, $m)) {
+                $this->collectTabElements($m[1], $tabGroups, $globalElements, $tabIndex, $inGlobal);
+                $i++;
                 continue;
             }
 
-            // 检测 -g 或 --global
-            if ($token === '-g' || $token === '--global') {
+            // 检测 -b 或 --tab（开始一个新的 Tab 组）
+            if ($token === '-b' || $token === '--tab') {
                 $i++;
-                while ($i < $count) {
-                    $nextToken = $tokens[$i];
-                    if ($nextToken === '-b' || $nextToken === '--tab' || $nextToken === '-g' || $nextToken === '--global') {
-                        break;
-                    }
-                    // 跳过其他选项（如 --no-interaction），元素名不会以 - 开头
-                    if (isset($nextToken[0]) && '-' === $nextToken[0]) {
-                        $i++;
-                        continue;
-                    }
-                    $globalElements[] = $nextToken;
-                    $i++;
-                }
+                $tabText = $tokens[$i] ?? '';
+                $tabIndex++;
+                $tabName = $formSnakeName . '_tab' . $tabIndex;
+                $tabGroups[] = [
+                    'name' => $tabName,
+                    'text' => $tabText,
+                    'elements' => [],
+                ];
+                $inGlobal = false;
+                $i++;
+                continue;
+            }
+
+            // 检测 -g 或 --global（切换为全局元素模式）
+            if ($token === '-g' || $token === '--global') {
+                $inGlobal = true;
+                $i++;
+                continue;
+            }
+
+            // 跳过其它选项（如 --no-interaction），元素名不会以 - 开头
+            if (isset($token[0]) && '-' === $token[0]) {
+                $i++;
                 continue;
             }
 
@@ -192,6 +188,42 @@ EOF
         }
 
         return [$tabGroups, $globalElements];
+    }
+
+    /**
+     * 把一个 -e 值（可能逗号分隔）拆成多个元素，归入当前 Tab 组或全局元素列表
+     */
+    private function collectTabElements(string $raw, array &$tabGroups, array &$globalElements, int $tabIndex, bool $inGlobal): void
+    {
+        foreach (explode(',', $raw) as $el) {
+            $el = trim($el);
+            if ($el === '') {
+                continue;
+            }
+            if ($inGlobal) {
+                $globalElements[] = $el;
+            } elseif ($tabIndex > 0) {
+                $tabGroups[count($tabGroups) - 1]['elements'][] = $el;
+            }
+            // tabIndex===0 且非 global：普通表单元素由 -e 选项原生收集（flattenElements），不入分组
+        }
+    }
+
+    /**
+     * 把 -e/--element 选项（IS_ARRAY，单个值可能为逗号分隔）展平为元素名数组
+     */
+    private function flattenElements($raw): array
+    {
+        $elements = [];
+        foreach ((array) $raw as $item) {
+            foreach (explode(',', (string) $item) as $el) {
+                $el = trim($el);
+                if ($el !== '') {
+                    $elements[] = $el;
+                }
+            }
+        }
+        return $elements;
     }
 
     /**

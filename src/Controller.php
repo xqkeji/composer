@@ -271,6 +271,35 @@ PHP;
     }
 
     /**
+     * 仅做控制器配置初始化（acl / menu / lang），不创建控制器文件、不解析中文名。
+     *
+     * 供 Table 生成树状表格时复用：树表流程已自行复制动作类并解析中文名，
+     * 这里只补齐普通 xqkeji:controller 命令会做的三项初始化
+     * （updateAclConfig / updateMenuConfig / Lang::writeActions），
+     * 使树状表格自动创建的控制器在 acl.php / menu.php / zh_cn.php 中与手动
+     * xqkeji:controller 创建的控制器保持一致。
+     *
+     * @param string $modulePath      模块路径
+     * @param string $configName      控制器小写下划线名（用于 acl/menu 配置键）
+     * @param array  $actions         动作列表（如树表 ['admin','add','edit','delete','move']）
+     * @param string $controllerTitle 控制器中文名（来自树表 resolveTreeTableCn）
+     * @param string $authEntry       权限入口（默认 admin）
+     * @param string $authType        权限类型（默认 auth）
+     */
+    public function initControllerConfig(
+        string $modulePath,
+        string $configName,
+        array $actions,
+        string $controllerTitle,
+        string $authEntry = 'admin',
+        string $authType = 'auth'
+    ): void {
+        $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
+        $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle);
+        Lang::writeActions($this->io, $modulePath, $this->context->getCurrentModule(), $configName, $actions, $controllerTitle);
+    }
+
+    /**
      * 菜单分组的默认标题
      */
     private function getMenuGroupTitle(string $groupKey): string

@@ -32,6 +32,7 @@ class Lang
         'b_open' => '批量启用',
         'b_close' => '批量禁用',
         'b_order' => '批量排序',
+        'move' => '移动',
         'index' => '首页',
         'list' => '列表',
         'view' => '查看',

@@ -390,23 +390,24 @@ class Table
     }
 
     /**
-     * 树形表格：自动检查并复制对应的树状控制器动作类
+     * 树形表格：自动检查并复制对应的树状控制器动作类，并补齐控制器配置初始化
      *
      * 目标目录：{模块路径}/controller/{表格名全小写蛇形}/
      * 源模板：插件自身的 src/example/src/controller/tree/
      * 复制时替换命名空间占位符 {MODULE_NAME} -> 当前模块、{CONTROLLER_NAME} -> 表格名全小写蛇形
      * （目录名与命名空间段均为全小写，符合框架 PSR-4：xqkeji\app\{模块}\controller\{表名}\）
+     *
+     * 复制动作类后，复用 Controller::initControllerConfig 补齐 acl.php / menu.php / zh_cn.php
+     * 的控制器相关项，使树状表格自动创建的控制器与手动 xqkeji:controller 创建的控制器保持一致。
+     * （acl/menu/lang 三项写入均为幂等：acl 覆盖同值、menu 去重跳过、lang 去重不覆盖）
+     *
+     * @param string $tableCn 表格中文名（来自 resolveTreeTableCn，作为控制器显示名）
      */
-    private function ensureTreeController(string $modulePath, string $currentModule, string $tableName): void
+    private function ensureTreeController(string $modulePath, string $currentModule, string $tableName, string $tableCn): void
     {
         // 目录名 / 命名空间段统一使用全小写蛇形（如 test_tree），与框架命名约定一致
         $dirName = $this->toSnakeCase($tableName);
         $controllerDir = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $dirName;
-
-        if (is_dir($controllerDir)) {
-            $this->io->write("<comment>⚠ 树状控制器目录已存在，跳过复制: {$controllerDir}</comment>");
-            return;
-        }
 
         // 插件自身的 example 树状控制器模板目录（与 Table.php 同级的 src 下）
         $treeTemplateDir = __DIR__ . DIRECTORY_SEPARATOR . 'example' . DIRECTORY_SEPARATOR
@@ -417,33 +418,51 @@ class Table
             return;
         }
 
-        if (!mkdir($controllerDir, 0755, true) && !is_dir($controllerDir)) {
-            $this->io->write("<error>创建树状控制器目录失败: {$controllerDir}</error>");
-            return;
+        if (!is_dir($controllerDir)) {
+            if (!mkdir($controllerDir, 0755, true) && !is_dir($controllerDir)) {
+                $this->io->write("<error>创建树状控制器目录失败: {$controllerDir}</error>");
+                return;
+            }
+            $this->io->write("<info>✓ 已创建树状控制器目录: {$controllerDir}</info>");
+        } else {
+            $this->io->write("<comment>⚠ 树状控制器目录已存在，跳过复制（仅补齐配置初始化）: {$controllerDir}</comment>");
         }
 
         $files = glob($treeTemplateDir . DIRECTORY_SEPARATOR . '*.php') ?: [];
         if (empty($files)) {
             $this->io->write("<comment>⚠ 树状控制器模板目录为空，未复制任何文件: {$treeTemplateDir}</comment>");
-            return;
+        } else {
+            foreach ($files as $templateFile) {
+                $content = file_get_contents($templateFile);
+                if ($content === false) {
+                    $this->io->write("<error>读取树状控制器模板失败: {$templateFile}</error>");
+                    continue;
+                }
+                // 替换命名空间占位符（{CONTROLLER_NAME} 使用全小写蛇形，与目录名一致）
+                $content = str_replace(
+                    ['{MODULE_NAME}', '{CONTROLLER_NAME}'],
+                    [$currentModule, $dirName],
+                    $content
+                );
+                $target = $controllerDir . DIRECTORY_SEPARATOR . basename($templateFile);
+                if (is_file($target)) {
+                    $this->io->write("<comment>⚠ 树状控制器动作类已存在，跳过: {$target}</comment>");
+                    continue;
+                }
+                file_put_contents($target, $content);
+                $this->io->write("<info>✓ 已复制树状控制器动作类: {$target}</info>");
+            }
         }
 
-        foreach ($files as $templateFile) {
-            $content = file_get_contents($templateFile);
-            if ($content === false) {
-                $this->io->write("<error>读取树状控制器模板失败: {$templateFile}</error>");
-                continue;
-            }
-            // 替换命名空间占位符（{CONTROLLER_NAME} 使用全小写蛇形，与目录名一致）
-            $content = str_replace(
-                ['{MODULE_NAME}', '{CONTROLLER_NAME}'],
-                [$currentModule, $dirName],
-                $content
-            );
-            $target = $controllerDir . DIRECTORY_SEPARATOR . basename($templateFile);
-            file_put_contents($target, $content);
-            $this->io->write("<info>✓ 已复制树状控制器动作类: {$target}</info>");
-        }
+        // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
+        $configName = $this->toSnakeCase($tableName);
+        $controller = new Controller($this->io, $this->composer);
+        $controller->initControllerConfig(
+            $modulePath,
+            $configName,
+            ['admin', 'add', 'edit', 'delete', 'move'],
+            $tableCn
+        );
     }
 
     /**

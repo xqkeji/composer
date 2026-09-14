@@ -20,6 +20,7 @@ class PathCommand extends BaseCommand
             ->addArgument('path', InputArgument::REQUIRED, '本地路径（包根目录，需包含 composer.json）')
             ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境')
             ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update')
+            ->addOption('no-alias', null, InputOption::VALUE_NONE, '不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束）')
             ->setHelp(<<<'EOF'
 将一个 composer 包注册为本地路径包（本地开发/联调用）
 
@@ -46,6 +47,8 @@ class PathCommand extends BaseCommand
   - 已存在同名 path 仓库则覆盖更新（幂等）
   - 默认自动运行 composer update 包名；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
+  - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
+  - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
 
 EOF
             );
@@ -57,6 +60,7 @@ EOF
         $rawPath = trim((string) $input->getArgument('path'));
         $useCopy = (bool) $input->getOption('copy');
         $noUpdate = (bool) $input->getOption('no-update');
+        $noAlias = (bool) $input->getOption('no-alias');
 
         // 校验包名
         if (!preg_match('/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/', $package)) {
@@ -82,6 +86,11 @@ EOF
         // 读本地包信息（判断是否为 composer-plugin）
         $pkgInfo = json_decode((string) file_get_contents($pkgComposer), true) ?: [];
         $isPlugin = isset($pkgInfo['type']) && $pkgInfo['type'] === 'composer-plugin';
+
+        // 本地包无 version 字段（典型 dev 分支）：自动写 branch-alias，使 path 仓库版本满足稳定约束
+        if (!$noAlias) {
+            $this->ensureBranchAlias($package, $absPath, $pkgComposer, $pkgInfo, $output);
+        }
 
         // 定位当前项目 composer.json
         $projectFile = $this->getProjectComposerJson();
@@ -218,5 +227,179 @@ EOF
     private function getProjectComposerJson(): string
     {
         return getcwd() . '/composer.json';
+    }
+
+    /**
+     * 本地包无 version 字段（典型 dev 分支）时，自动在 extra.branch-alias.dev-<分支> 写入
+     * <系列>.x-dev，使 path 仓库报告的版本满足依赖的 ^x 稳定约束，
+     * 避免“canonical path repo 版本不满足约束、且不可回退 packagist”的解析失败。
+     *
+     * 系列号来源优先级：
+     *   ① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）
+     *   ② 本地 git 最新 tag
+     *   ③ 交互输入
+     * 分支名取自本地 git HEAD；无 git 时交互提示（默认 main）。
+     * 每次运行会按最新版本自动推进系列号（如 1.2.x-dev → 1.3.x-dev）。
+     */
+    private function ensureBranchAlias(string $package, string $absPath, string $pkgComposer, array &$pkgInfo, OutputInterface $output): void
+    {
+        if (isset($pkgInfo['version'])) {
+            return;
+        }
+
+        $io = $this->getIO();
+
+        // 分支名：本地 git HEAD；无 git 时交互提示（默认 main）
+        $branch = $this->detectBranch($absPath);
+        if ($branch === null || $branch === '' || $branch === 'HEAD') {
+            $ans = $io->ask("该包未检测到 git 分支，branch-alias 的键名用哪个分支（默认 main）？", 'main');
+            $branch = is_string($ans) && trim((string) $ans) !== '' ? trim((string) $ans) : 'main';
+        }
+        $aliasKey = 'dev-' . $branch;
+
+        // 系列号：优先取包已发布/已安装的最新稳定版本（与 composer 最新版本对应，无需 git）
+        $series = $this->registryLatestStable($package);
+        $seriesSource = '包最新版本';
+        if ($series === null) {
+            // 回退：本地 git 最新 tag
+            $tag = $this->detectLatestTag($absPath);
+            if ($tag !== null && preg_match('/(\d+\.\d+)\.\d+/', $tag, $m)) {
+                $series = $m[1];
+                $seriesSource = '本地 git tag';
+            }
+        }
+        if ($series === null) {
+            // 回退：交互输入
+            $ans = $io->ask("无法确定 {$package} 对应的稳定版本系列（如 1.2），请手动输入：", null);
+            if (is_string($ans) && preg_match('/^\d+\.\d+$/', trim((string) $ans))) {
+                $series = trim((string) $ans);
+                $seriesSource = '手动输入';
+            }
+        }
+        if ($series === null) {
+            $output->writeln("<comment>无法确定 {$package} 的稳定版本系列（未发布/未安装、无 git tag、且未交互输入），跳过 branch-alias；</comment>");
+            $output->writeln("<comment>其依赖若要求稳定版本（如 ^1.0），请手动在该包 composer.json 的 extra.branch-alias.{$aliasKey} 写入 &lt;系列&gt;.x-dev</comment>");
+            return;
+        }
+
+        $alias = $series . '.x-dev';
+
+        if (!isset($pkgInfo['extra']) || !is_array($pkgInfo['extra'])) {
+            $pkgInfo['extra'] = [];
+        }
+        if (!isset($pkgInfo['extra']['branch-alias']) || !is_array($pkgInfo['extra']['branch-alias'])) {
+            $pkgInfo['extra']['branch-alias'] = [];
+        }
+
+        $existing = $pkgInfo['extra']['branch-alias'][$aliasKey] ?? null;
+        if ($existing === $alias) {
+            $output->writeln("<comment>本地包 extra.branch-alias.{$aliasKey} 已为 {$alias}（来源：{$seriesSource}），跳过</comment>");
+            return;
+        }
+        if ($existing !== null) {
+            $output->writeln("<comment>本地包 extra.branch-alias.{$aliasKey} 由 {$existing} 更新为 {$alias}（来源：{$seriesSource}，版本系列已推进）</comment>");
+        }
+
+        $pkgInfo['extra']['branch-alias'][$aliasKey] = $alias;
+        $written = file_put_contents(
+            $pkgComposer,
+            json_encode($pkgInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n"
+        );
+        if ($written === false) {
+            $output->writeln("<error>写入本地包 branch-alias 失败：{$pkgComposer}</error>");
+            return;
+        }
+        $action = $existing === null ? '写入' : '更新';
+        $output->writeln("<info>已在本地包 composer.json {$action} extra.branch-alias.{$aliasKey} = {$alias}（来源：{$seriesSource}，path 仓库版本将满足依赖的稳定约束）</info>");
+    }
+
+    /**
+     * 取该包已发布/已安装的最新稳定版本系列（major.minor），与 composer 最新版本直接对应。
+     * 优先读本地已安装仓库（无需网络），回退到远程仓库（packagist/gitee，需网络）。失败返回 null。
+     */
+    private function registryLatestStable(string $package): ?string
+    {
+        try {
+            $composer = $this->requireComposer();
+            $rm = $composer->getRepositoryManager();
+
+            // 1) 已安装版本（本地仓库，无需网络）
+            $local = $rm->getLocalRepository();
+            $installed = $local->findPackage($package, '*');
+            if ($installed !== null) {
+                $v = $installed->getVersion();
+                if (preg_match('/^(\d+)\.(\d+)\.\d+\.\d+$/', $v, $m)) {
+                    return $m[1] . '.' . $m[2];
+                }
+            }
+
+            // 2) 远程仓库（需网络）
+            foreach ($rm->findPackages($package) as $p) {
+                $v = $p->getVersion();
+                if (preg_match('/^(\d+)\.(\d+)\.\d+\.\d+$/', $v, $m)) {
+                    return $m[1] . '.' . $m[2];
+                }
+            }
+        } catch (\Throwable $e) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * 读取本地包 .git/HEAD 获取当前分支名；无 .git 或 detached 返回 null。
+     */
+    private function detectBranch(string $absPath): ?string
+    {
+        $headFile = $absPath . '/.git/HEAD';
+        if (!is_file($headFile)) {
+            return null;
+        }
+        $head = trim((string) file_get_contents($headFile));
+        if (str_starts_with($head, 'ref: refs/heads/')) {
+            return substr($head, strlen('ref: refs/heads/'));
+        }
+        return null;
+    }
+
+    /**
+     * 直接读取本地包 .git 目录获取最新 tag（合并 refs/tags/ 与 packed-refs），失败返回 null。
+     * 避免 shell_exec 调 git（部分 Windows 环境下带路径参数会失败）。
+     */
+    private function detectLatestTag(string $absPath): ?string
+    {
+        $gitDir = $absPath . '/.git';
+        if (!is_dir($gitDir)) {
+            return null;
+        }
+
+        $tags = [];
+        $tagDir = $gitDir . '/refs/tags';
+        if (is_dir($tagDir)) {
+            foreach (glob($tagDir . '/*') as $f) {
+                if (is_file($f)) {
+                    $tags[] = basename($f);
+                }
+            }
+        }
+        $packed = $gitDir . '/packed-refs';
+        if (is_file($packed)) {
+            foreach (file($packed) as $line) {
+                $line = trim((string) $line);
+                if ($line === '' || str_starts_with($line, '#')) {
+                    continue;
+                }
+                if (preg_match('#^[\da-f]{40}\s+refs/tags/([^\s]+)$#', $line, $tm)) {
+                    $tags[] = $tm[1];
+                }
+            }
+        }
+        if (empty($tags)) {
+            return null;
+        }
+        usort($tags, static function ($a, $b): int {
+            return version_compare(ltrim($a, 'vV'), ltrim($b, 'vV'));
+        });
+        return end($tags);
     }
 }

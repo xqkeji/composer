@@ -115,6 +115,8 @@ class Table
         //            不含 move、不复制 tree 元素、不初始化树集合
         if ($isTree) {
             $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn);
+            // 树状表格：在 model 目录创建树模型类（继承 xqkeji\mvc\model\Tree）
+            $this->ensureTreeModel($modulePath, $currentModule, $tableName);
             // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
             // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
             $this->seedTreeCollection($configName);
@@ -470,6 +472,33 @@ class Table
             ['add', 'edit', 'admin', 'delete', 'change', 'move'],
             $tableCn
         );
+    }
+
+    /**
+     * 树状表格：在 model 目录创建树模型类（继承 xqkeji\mvc\model\Tree）
+     *
+     * 目标文件：{模块路径}/model/{大驼峰表名}.php
+     * 命名空间：xqkeji\app\{模块}\model（{MODULE_NAME} -> 当前模块，{MODEL_NAME} -> 大驼峰表名）
+     * 文件已存在则幂等跳过。
+     */
+    private function ensureTreeModel(string $modulePath, string $currentModule, string $tableName): void
+    {
+        $className = $this->toCamelCase($tableName);
+        $modelDir = $modulePath . DIRECTORY_SEPARATOR . 'model';
+        if (!is_dir($modelDir)) {
+            mkdir($modelDir, 0755, true);
+        }
+        $modelFile = $modelDir . DIRECTORY_SEPARATOR . $className . '.php';
+
+        if (is_file($modelFile)) {
+            $this->io->write("<comment>⚠ 树状模型类已存在，跳过: {$modelFile}</comment>");
+            return;
+        }
+
+        $namespace = "xqkeji\\app\\{$currentModule}\\model";
+        $content = "<?php\nnamespace {$namespace};\n\nuse xqkeji\\mvc\\model\\Tree;\n\nclass {$className} extends Tree\n{\n}\n";
+        file_put_contents($modelFile, $content);
+        $this->io->write("<info>✓ 已创建树状模型类: {$modelFile}</info>");
     }
 
     /**

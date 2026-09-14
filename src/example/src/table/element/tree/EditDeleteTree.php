@@ -6,7 +6,7 @@ class EditDeleteTree extends ListItem
 	protected $name = 'list_edit_delete';
 	protected $text = '操作';
 	protected $attrs=[
-		'style'=>'min-width:200px;',
+		'style'=>'min-width:150px;',
 	];
 	protected $el=[
 		[

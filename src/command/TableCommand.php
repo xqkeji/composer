@@ -19,6 +19,7 @@ class TableCommand extends BaseCommand
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
             ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）')
             ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
+            ->addOption('no-controller', 'N', InputOption::VALUE_NONE, '仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合')
             ->setHelp(<<<'EOF'
 创建表格类和表格元素
 
@@ -37,6 +38,11 @@ class TableCommand extends BaseCommand
   <comment># 创建表格（创建新元素时交互式输入中文名称）</comment>
   composer xqkeji:table User -e id,username,switch_check,login_time,edit_delete
 
+  <comment># 仅创建表格（不创建控制器、不更新 acl/menu/lang；树表同时不建模型类与集合）</comment>
+  composer xqkeji:table User -N
+  composer xqkeji:table User -N -e id -e Username
+  composer xqkeji:table User -T -N
+
 <info>说明：</info>
 
   - 表格名支持大小写，自动转为大驼峰（如 user → User、user_list → UserList）
@@ -50,6 +56,7 @@ class TableCommand extends BaseCommand
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
   - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）
+  - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
   - 需要先使用 xqkeji:use 切换到目标模块
 
 EOF
@@ -76,9 +83,10 @@ EOF
         
         $elements = $this->flattenElements($input->getOption('element'));
         $isTree = $input->getOption('tree');
-        
+        $withController = !$input->getOption('no-controller');
+
         $table = new Table($this->getIO(), $this->requireComposer());
-        $table->createTable($name, $elements, $input, $output, $isTree);
+        $table->createTable($name, $elements, $input, $output, $isTree, $withController);
         
         return 0;
     }

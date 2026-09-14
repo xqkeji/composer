@@ -23,7 +23,7 @@ class Table
     /**
      * 创建表格（公开方法）
      */
-    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false): void
+    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true): void
     {
         // 验证表格名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
@@ -70,7 +70,7 @@ class Table
             }
             // 树状表格中文名：优先复用控制器显示名（共享键 {模块} module {表名蛇形}），
             // 不存在则交互询问并去重写入 lang；用于替换树元素模板中的中文名占位符
-            $tableCn = $this->resolveTreeTableCn($modulePath, $currentModule, $tableName, $className);
+            $tableCn = $this->resolveTreeTableCn($modulePath, $currentModule, $tableName, $className, $withController);
             // 复制并改名 tree 元素到模块 table/element/（不带 tree 子目录），元素中文名随表格中文名更新
             $this->ensureTreeElements($modulePath, $currentModule, $tableName, $className, $configName, $tableCn);
             // 树状表格默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），忽略命令行传入的 elements
@@ -89,21 +89,28 @@ class Table
                 }
 
                 foreach ($elements as $element) {
-                    $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output);
+                    $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output, $withController);
                     if ($elementRef !== null) {
                         $elementRefs[] = $elementRef;
                     }
                 }
             }
-            // 普通表格中文名：统一优先级（设置 > 读取 lang > 交互提示），作为控制器显示名
-            $tableCn = Lang::resolve(
-                $this->io,
-                $modulePath,
-                "{$currentModule} module " . $this->toSnakeCase($tableName),
-                null,
-                "请输入表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
-                $className
-            );
+            // 普通表格中文名：默认走统一优先级（设置 > 读取 lang > 交互提示），作为控制器显示名；
+            // 仅创建表格模式（-N）下只读取已有 lang、不回写，避免改动 zh_cn.php
+            $tableCnLangKey = "{$currentModule} module " . $this->toSnakeCase($tableName);
+            if ($withController) {
+                $tableCn = Lang::resolve(
+                    $this->io,
+                    $modulePath,
+                    $tableCnLangKey,
+                    null,
+                    "请输入表格 '" . $this->toSnakeCase($tableName) . "' 的中文名称（留空使用 '{$className}'）：",
+                    $className
+                );
+            } else {
+                $readCn = Lang::getValue($modulePath, $tableCnLangKey);
+                $tableCn = ($readCn !== null && $readCn !== '') ? $readCn : $className;
+            }
         }
 
         // 创建表格类
@@ -113,15 +120,21 @@ class Table
         //   - 树表：复制 tree 动作类（admin/add/move）+ 初始化集合，动作含 move、复制 tree 元素
         //   - 普通表：创建单文件控制器（admin/add/edit/delete）+ acl/menu/lang 初始化，
         //            不含 move、不复制 tree 元素、不初始化树集合
-        if ($isTree) {
-            $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn);
-            // 树状表格：在 model 目录创建树模型类（继承 xqkeji\mvc\model\Tree）
-            $this->ensureTreeModel($modulePath, $currentModule, $tableName);
-            // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
-            // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
-            $this->seedTreeCollection($configName);
+        // 仅创建表格模式（-N）：跳过控制器创建与 acl/menu/lang 初始化；树表同时跳过模型类与集合
+        if (!$withController) {
+            $this->io->write("<comment>⚠ 仅创建表格模式：已跳过控制器创建及 acl.php/menu.php/zh_cn.php 初始化"
+                . ($isTree ? "（以及模型类、树集合初始化）" : "") . "</comment>");
         } else {
-            $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn);
+            if ($isTree) {
+                $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn);
+                // 树状表格：在 model 目录创建树模型类（继承 xqkeji\mvc\model\Tree）
+                $this->ensureTreeModel($modulePath, $currentModule, $tableName);
+                // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
+                // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
+                $this->seedTreeCollection($configName);
+            } else {
+                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn);
+            }
         }
 
         // 自动切换为表格模式
@@ -131,7 +144,7 @@ class Table
     /**
      * 处理表格元素（查找或创建）
      */
-    private function processElement(string $modulePath, string $elementName, string $currentModule, $input = null, $output = null): ?string
+    private function processElement(string $modulePath, string $elementName, string $currentModule, $input = null, $output = null, bool $writeBack = true): ?string
     {
         // 转换为大驼峰类名
         $className = $this->toCamelCase($elementName);
@@ -159,14 +172,21 @@ class Table
         }
 
         // 元素中文名统一解析（键全小写蛇形）；lang 已记录则直接复用，否则交互提示
-        $elementText = Lang::resolve(
-            $this->io,
-            $modulePath,
-            "{$currentModule} {$configName} name",
-            null,
-            "请输入元素 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
-            $className
-        );
+        // 仅创建表格模式（-N）：只读取已有 lang、不回写（不改动 zh_cn.php），读不到回退类名
+        $elementLangKey = "{$currentModule} {$configName} name";
+        if ($writeBack) {
+            $elementText = Lang::resolve(
+                $this->io,
+                $modulePath,
+                $elementLangKey,
+                null,
+                "请输入元素 '{$configName}' 的中文名称（留空使用 '{$className}'）：",
+                $className
+            );
+        } else {
+            $readText = Lang::getValue($modulePath, $elementLangKey);
+            $elementText = ($readText !== null && $readText !== '') ? $readText : $className;
+        }
         // 兜底确保非空（非交互或留空回退 $className）
         if ($elementText === '') {
             $elementText = $className;
@@ -315,9 +335,15 @@ class Table
      * 读不到时交互提示用户设置（非交互回退 $className），并去重写入 lang。
      * 返回的中文名用于替换树元素模板中的 {中文名称}/{中文名} 占位符。
      */
-    private function resolveTreeTableCn(string $modulePath, string $currentModule, string $tableName, string $className): string
+    private function resolveTreeTableCn(string $modulePath, string $currentModule, string $tableName, string $className, bool $writeBack = true): string
     {
         $langKey = "{$currentModule} module " . $this->toSnakeCase($tableName);
+
+        // 仅创建表格模式（-N）：只读取已有 lang、不回写（不改动 zh_cn.php），读不到回退类名
+        if (!$writeBack) {
+            $read = Lang::getValue($modulePath, $langKey);
+            return ($read !== null && $read !== '') ? $read : $className;
+        }
 
         return Lang::resolve(
             $this->io,

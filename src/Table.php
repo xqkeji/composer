@@ -23,7 +23,7 @@ class Table
     /**
      * 创建表格（公开方法）
      */
-    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true): void
+    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false): void
     {
         // 验证表格名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
@@ -67,6 +67,10 @@ class Table
         if ($isTree) {
             if (!empty($elements)) {
                 $this->io->write("<comment>⚠ 树状表格使用内置默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），已忽略命令行传入的元素参数</comment>");
+            }
+            if ($isDrag) {
+                $this->io->write("<comment>⚠ 树状表格自带拖拽排序，-D/--drag 仅适用于普通表格，已忽略该参数</comment>");
+                $isDrag = false;
             }
             // 树状表格中文名：优先复用控制器显示名（共享键 {模块} module {表名蛇形}），
             // 不存在则交互询问并去重写入 lang；用于替换树元素模板中的中文名占位符
@@ -114,7 +118,7 @@ class Table
         }
 
         // 创建表格类
-        $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree);
+        $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree, $isDrag);
 
         // 自动创建控制器（树表与普通表都创建，但动作/元素不同）：
         //   - 树表：复制 tree 动作类（admin/add/move）+ 初始化集合，动作含 move、复制 tree 元素
@@ -282,7 +286,7 @@ class Table
     /**
      * 创建表格文件
      */
-    private function createTableFile(string $tablePath, string $className, string $configName, array $elementRefs, string $moduleName, bool $isTree = false): void
+    private function createTableFile(string $tablePath, string $className, string $configName, array $elementRefs, string $moduleName, bool $isTree = false, bool $isDrag = false): void
     {
         $filePath = $tablePath . DIRECTORY_SEPARATOR . $className . '.php';
 
@@ -291,7 +295,7 @@ class Table
             return;
         }
 
-        $content = $this->generateTableContent($moduleName, $className, $configName, $elementRefs, $isTree);
+        $content = $this->generateTableContent($moduleName, $className, $configName, $elementRefs, $isTree, $isDrag);
         file_put_contents($filePath, $content);
 
         $this->io->write("<info>✓ 表格已创建: $filePath</info>");
@@ -300,7 +304,7 @@ class Table
     /**
      * 生成表格类内容
      */
-    private function generateTableContent(string $moduleName, string $className, string $configName, array $elementRefs, bool $isTree = false): string
+    private function generateTableContent(string $moduleName, string $className, string $configName, array $elementRefs, bool $isTree = false, bool $isDrag = false): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\table";
 
@@ -325,7 +329,10 @@ class Table
             $foot = "'@Foot'";
         }
 
-        return "<?php\nnamespace {$namespace};\n\nuse {$useTable};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$foot = {$foot};\n\n    // 表格元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+        // 可拖动排序（仅普通表格）：在表格类中额外生成 protected $isDrag = true;
+        $dragProp = $isDrag ? "    protected \$isDrag = true;\n\n" : '';
+
+        return "<?php\nnamespace {$namespace};\n\nuse {$useTable};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$foot = {$foot};\n\n{$dragProp}    // 表格元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
     }
 
     /**
@@ -490,12 +497,13 @@ class Table
         }
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
+        // 树表动作集在普通表基础上追加 move（拖拽/移动）与 subnode（子节点懒加载）
         $configName = $this->toSnakeCase($tableName);
         $controller = new Controller($this->io, $this->composer);
         $controller->initControllerConfig(
             $modulePath,
             $configName,
-            ['add', 'edit', 'admin', 'delete', 'change', 'move'],
+            ['add', 'edit', 'admin', 'delete', 'change', 'move', 'subnode'],
             $tableCn
         );
     }

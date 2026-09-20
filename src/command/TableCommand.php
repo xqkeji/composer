@@ -19,6 +19,7 @@ class TableCommand extends BaseCommand
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
             ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）')
             ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
+            ->addOption('drag', 'D', InputOption::VALUE_NONE, '创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）')
             ->addOption('no-controller', 'N', InputOption::VALUE_NONE, '仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合')
             ->setHelp(<<<'EOF'
 创建表格类和表格元素
@@ -34,6 +35,9 @@ class TableCommand extends BaseCommand
 
   <comment># 创建树形表格（继承 TreegridTable）</comment>
   composer xqkeji:table User -T -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
+
+  <comment># 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;）</comment>
+  composer xqkeji:table User -D -e id,Username,SwitchCheck,LoginTime,EditDelete
 
   <comment># 创建表格（创建新元素时交互式输入中文名称）</comment>
   composer xqkeji:table User -e id,username,switch_check,login_time,edit_delete
@@ -55,6 +59,8 @@ class TableCommand extends BaseCommand
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
+  - 使用 -D/--drag 创建可拖动排序的普通表格：仍继承 Table，仅在表格类中额外生成 protected \$isDrag = true;
+  - -D 与 -T 互斥：树形表格自带拖拽排序，指定 -T 时忽略 -D
   - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）
   - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
   - 需要先使用 xqkeji:use 切换到目标模块
@@ -83,10 +89,11 @@ EOF
         
         $elements = $this->flattenElements($input->getOption('element'));
         $isTree = $input->getOption('tree');
+        $isDrag = $input->getOption('drag');
         $withController = !$input->getOption('no-controller');
 
         $table = new Table($this->getIO(), $this->requireComposer());
-        $table->createTable($name, $elements, $input, $output, $isTree, $withController);
+        $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag);
         
         return 0;
     }

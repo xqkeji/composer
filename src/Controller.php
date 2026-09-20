@@ -281,7 +281,7 @@ PHP;
      *
      * @param string $modulePath      模块路径
      * @param string $configName      控制器小写下划线名（用于 acl/menu 配置键）
-     * @param array  $actions         动作列表（如树表 ['admin','add','edit','delete','move']）
+     * @param array  $actions         动作列表（如树表 ['add','edit','admin','delete','change','move','subnode']）
      * @param string $controllerTitle 控制器中文名（来自树表 resolveTreeTableCn）
      * @param string $authEntry       权限入口（默认 admin）
      * @param string $authType        权限类型（默认 auth）

@@ -32,6 +32,10 @@ class FormCommand extends BaseCommand
   composer xqkeji:form User -e Username -e Password -e Email
   composer xqkeji:form User -e Username,Password,Email
 
+  <comment># 元素为 select 类型：蛇形或驼峰写法均可（如 select_dept 或 SelectDept），自动生成 SelectModel 空子类、不询问中文名</comment>
+  composer xqkeji:form Article -e title,select_dept,select_status
+  composer xqkeji:form Article -e title,SelectDept,SelectStatus
+
   <comment># 创建Tab表单（Tab英文名称自动生成）</comment>
   composer xqkeji:form User -b "基本信息" -e Username -e Password -b "授权信息" -e Auth -e Csrf
 
@@ -50,6 +54,9 @@ class FormCommand extends BaseCommand
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
+  - select 元素支持两种写法：蛇形 select_dept 或驼峰 SelectDept（内部统一转蛇形后判断），只要元素名转蛇形后以 select_ 开头即视为 select 元素
+  - select 元素（如 select_dept / SelectDept）：自动在当前模块 form/element/ 下创建继承 xqkeji\form\element\SelectModel 的空元素类，类名转大驼峰（select_dept → SelectDept），类体为空、由 SelectModel 提供行为，且不询问中文名；表单中以 ~SelectDept 引用
+  - 若同名元素已存在于 base 或当前模块，则直接按 @SelectDept / ~SelectDept 引用，不再重复创建
   - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）

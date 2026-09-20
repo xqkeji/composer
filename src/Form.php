@@ -150,12 +150,21 @@ class Form
             return '~' . $className;
         }
 
-        // 3. 创建新元素 - 解析中文名称（统一优先级：设置 > 读取 lang > 交互提示）
+        // 3. 创建新元素
         $elementPath = $modulePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . 'element';
         if (!is_dir($elementPath)) {
             mkdir($elementPath, 0755, true);
         }
 
+        // select_ 开头的元素（蛇形 select_dept 或驼峰 SelectDept 均可，先统一转蛇形再判前缀）：
+        // 生成 SelectModel 的空子类（仅继承、类体为空，不写属性、不询问中文名），如 → 类 SelectDept
+        if (strpos($configName, 'select_') === 0) {
+            $this->createElementFile($elementPath, $className, $configName, '', true);
+            $this->io->write("<info>✓ 已创建表单元素（SelectModel 子类）: $className</info>");
+            return '~' . $className;
+        }
+
+        // 普通元素 - 解析中文名称（统一优先级：设置 > 读取 lang > 交互提示）
         // 元素中文名统一解析（键全小写蛇形）；lang 已记录则直接复用，否则交互提示
         $elementText = Lang::resolve(
             $this->io,
@@ -231,7 +240,7 @@ class Form
     /**
      * 创建表单元素文件
      */
-    private function createElementFile(string $elementPath, string $className, string $configName, string $elementText): void
+    private function createElementFile(string $elementPath, string $className, string $configName, string $elementText, bool $isSelect = false): void
     {
         $filePath = $elementPath . DIRECTORY_SEPARATOR . $className . '.php';
 
@@ -241,16 +250,25 @@ class Form
         }
 
         $currentModule = $this->context->getCurrentModule();
-        $content = $this->generateElementContent($currentModule, $className, $configName, $elementText);
+        $content = $this->generateElementContent($currentModule, $className, $configName, $elementText, $isSelect);
         file_put_contents($filePath, $content);
     }
 
     /**
      * 生成表单元素类内容
+     *
+     * 默认生成继承 Text 的完整元素类；$isSelect 为 true 时生成继承 SelectModel 的空类
+     * （select_ 开头元素的约定：类体为空，直接继承，由 SelectModel 提供行为）。
      */
-    private function generateElementContent(string $moduleName, string $className, string $configName, string $elementText): string
+    private function generateElementContent(string $moduleName, string $className, string $configName, string $elementText, bool $isSelect = false): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\form\\element";
+
+        if ($isSelect) {
+            $useSelectModel = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'SelectModel';
+            return "<?php\nnamespace {$namespace};\n\nuse {$useSelectModel};\n\nclass {$className} extends SelectModel\n{\n}\n";
+        }
+
         $useText = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'Text';
 
         return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '@row';\n}\n";

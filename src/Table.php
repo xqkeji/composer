@@ -10,6 +10,15 @@ class Table
     use PathTrait;
     use ElInsertTrait;
 
+    /**
+     * 自动配套表单时，从表格列中剔除的“仅表格”元素（主键 / 时间戳 / 操作列），按蛇形名匹配。
+     * 剩余列作为表单元素，末尾再追加 submit_reset。
+     */
+    private const FORM_EXCLUDED_ELEMENTS = [
+        'id', 'create_time', 'create_date', 'update_time', 'update_date',
+        'edit_delete', 'delete', 'view_delete',
+    ];
+
     private IOInterface $io;
     private Composer $composer;
     private Context $context;
@@ -23,8 +32,13 @@ class Table
 
     /**
      * 创建表格（公开方法）
+     *
+     * @param bool $withForm 是否在创建表格后自动创建同名配套表单（用表格列去掉仅表格元素、追加 submit_reset）；
+     *                       仅对有显式 -e 列的普通表格生效，--no-form 或非交互无列时跳过。
+     * @param bool $controllerFile 普通表格是否生成控制器实体文件 controller/{Class}.php；默认 false=虚拟控制器
+     *                             （只初始化 acl/menu/lang，不落地文件）。仅作用于普通表格，树表始终复制动作类文件。
      */
-    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false): void
+    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false, bool $withForm = true, bool $controllerFile = false): void
     {
         // 验证表格名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
@@ -138,12 +152,46 @@ class Table
                 // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
                 $this->seedTreeCollection($configName);
             } else {
-                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn);
+                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn, $controllerFile);
             }
         }
 
-        // 自动切换为表格模式
+        // 自动创建同名配套表单（可用 --no-form 关闭）：把表格列去掉“仅表格”元素（主键/时间戳/操作列）后，
+        // 追加 submit_reset 作为表单元素。表单与表格同名，共享控制器与中文名（lang 键一致），
+        // 且元素中文名已在建表时写入 lang，故建表单过程不会再重复询问。仅对传入了 -e 列的表格生效。
+        if ($withForm) {
+            $formElements = $this->deriveFormElements($elements);
+            if (!empty($formElements)) {
+                $this->io->write('<info>▶ 自动创建配套表单 ' . $className . '（元素：' . implode(', ', $formElements) . '）</info>');
+                $form = new Form($this->io, $this->composer);
+                $form->createForm($tableName, $formElements, $input, $output);
+            } elseif (!empty($elements)) {
+                $this->io->write('<comment>⚠ 表格列均为仅表格元素（主键/时间戳/操作列），已跳过自动创建表单</comment>');
+            }
+        }
+
+        // 自动切换为表格模式（建表单过程会切到 form 模式，这里统一切回 table，保持 xqkeji:table 的语境）
         $this->context->switchMode('table');
+    }
+
+    /**
+     * 由表格列推导配套表单的元素名：剔除 FORM_EXCLUDED_ELEMENTS（按蛇形名匹配），
+     * 再在末尾追加 submit_reset。若无任何可用列则返回空数组（调用方据此跳过建表单）。
+     */
+    private function deriveFormElements(array $tableElements): array
+    {
+        $formElements = [];
+        foreach ($tableElements as $el) {
+            if (in_array($this->toSnakeCase($el), self::FORM_EXCLUDED_ELEMENTS, true)) {
+                continue;
+            }
+            $formElements[] = $el;
+        }
+        if (empty($formElements)) {
+            return [];
+        }
+        $formElements[] = 'submit_reset';
+        return $formElements;
     }
 
     /**
@@ -690,31 +738,37 @@ class Table
     }
 
     /**
-     * 普通（非树状）表格：自动创建单文件控制器并补齐 acl/menu/lang 初始化
+     * 普通（非树状）表格：初始化控制器配置（acl/menu/lang），并按需生成控制器实体文件
      *
-     * 与普通 xqkeji:controller --file 创建保持一致：
-     *   - 创建 controller/{大驼峰表名}.php（继承 xqkeji\mvc\Controller，动作由框架基类按约定解析，无需单独动作类文件）
-     *   - 动作集为 add/edit/admin/delete/change（含 change，不含树表专属的 move）
-     *   - 不复制 tree 元素、不初始化树集合
-     * 控制器文件已存在则幂等跳过（仅补齐配置初始化）。
+     * 默认使用【虚拟控制器】：不生成 controller/{Class}.php，只要 acl.php 有该控制器/动作定义，
+     * 框架即可按约定解析动作，控制器即“存在”。仅当 $controllerFile=true（命令行 -f/--controller-file）
+     * 时才落地实体文件（继承 xqkeji\mvc\Controller，动作由基类按约定解析）。
+     * 无论是否落地文件，都会补齐 acl/menu/lang 初始化，与 xqkeji:controller 保持一致
+     * （动作集 add/edit/admin/delete/change；不含树表专属的 move）。
      *
-     * @param string $tableCn 表格中文名（作为控制器显示名，来自 Lang::resolve）
+     * @param string $tableCn        表格中文名（作为控制器显示名，来自 Lang::resolve）
+     * @param bool   $controllerFile 是否生成控制器实体文件（默认 false=虚拟控制器）
      */
-    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn): void
+    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn, bool $controllerFile = false): void
     {
         $className = $this->toCamelCase($tableName);
-        $controllerFile = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
+        $ctrlPath = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
 
-        if (!is_file($controllerFile)) {
-            $namespace = "xqkeji\\app\\{$currentModule}\\controller";
-            $content = "<?php\nnamespace {$namespace};\n\nuse xqkeji\\mvc\\Controller;\n\nclass {$className} extends Controller\n{\n\n}\n";
-            if (!is_dir(dirname($controllerFile))) {
-                mkdir(dirname($controllerFile), 0755, true);
+        if ($controllerFile) {
+            if (!is_file($ctrlPath)) {
+                $namespace = "xqkeji\\app\\{$currentModule}\\controller";
+                $content = "<?php\nnamespace {$namespace};\n\nuse xqkeji\\mvc\\Controller;\n\nclass {$className} extends Controller\n{\n\n}\n";
+                if (!is_dir(dirname($ctrlPath))) {
+                    mkdir(dirname($ctrlPath), 0755, true);
+                }
+                file_put_contents($ctrlPath, $content);
+                $this->io->write("<info>✓ 已创建普通表格控制器实体文件: {$ctrlPath}</info>");
+            } else {
+                $this->io->write("<comment>⚠ 普通表格控制器实体文件已存在，跳过创建（仅补齐配置初始化）: {$ctrlPath}</comment>");
             }
-            file_put_contents($controllerFile, $content);
-            $this->io->write("<info>✓ 已创建普通表格控制器: {$controllerFile}</info>");
         } else {
-            $this->io->write("<comment>⚠ 普通表格控制器已存在，跳过创建（仅补齐配置初始化）: {$controllerFile}</comment>");
+            // 虚拟控制器：不落地上文件，acl.php 有定义即生效
+            $this->io->write('<comment>⊘ 未创建控制器实体文件（使用虚拟控制器，acl.php 已定义即生效），如需实体文件请加 -f/--controller-file</comment>');
         }
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致

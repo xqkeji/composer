@@ -46,7 +46,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:model` | `model/{Class}.php` |
 | `xqkeji:action` | 控制器动作类；动作名写入语言文件 |
 | `xqkeji:form` | `form/{Class}.php`（继承 `Form` 或 `TabForm`）+ 所需 `form/element/{El}.php`；表单中文名入 lang |
-| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`）+ `table/element/{El}.php`；非 `-N` 时建控制器并初始化 acl/menu/lang |
+| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
 | `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调） |
@@ -61,7 +61,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类。
 - `xqkeji:model {name}` — 创建模型类。
 - `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-a]` — 创建表单；`-a` 向**已存在**表单交互式追加元素。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-a]` — 创建表格；`-a` 向**已存在**表格交互式追加列。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--no-alias]` — 注册本地 path 包。
@@ -74,6 +74,23 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - 新元素走 `xqkeji:element` 的创建流程（终端交互弹类型/项目列表）；`select_` 前缀直接生成 SelectModel 子类；同名已存在则按 `@/~` 复用不重建。
 - 用文本偏移方式写回 `$el`（`src/ElInsertTrait.php`），只插一行引用、保留文件其余内容与手工编辑。`-a` 只插入，不新建表单/表格、不涉及控制器/acl/menu/lang。
 
+## 建表格时控制器默认虚拟（`-f` 才落地实体文件）
+
+`xqkeji:table` 建普通表格时，控制器默认走【虚拟控制器】：不生成 `controller/{Class}.php`，只初始化 `acl.php`/`menu.php`/`zh_cn.php`——只要 acl 里有该控制器与动作定义，框架即按约定解析动作、控制器即“存在”。与 `xqkeji:controller` 的“默认虚拟、`-f/--file` 才落地文件”一致。
+
+- 需要实体文件时加 `-f`/`--controller-file` → 生成继承 `xqkeji\mvc\Controller` 的 `controller/{Class}.php`。
+- 仅作用于普通表格；**树表例外**：树表仍会复制 `controller/{表名}/` 下的动作类（admin/add/move…），因其拖拽/懒加载动作依赖实体文件。
+- `-N`（完全不建控制器、不写 acl/menu/lang）与 `-f` 语义互斥：带 `-N` 时不进入控制器初始化分支。
+
+## 建表格时自动派生同名表单（`-F` 关闭）
+
+`xqkeji:table {name} -e 列...` 建完表格后，**默认**会用同一批列再创建一个同名表单 `form/{Class}.php`（`Table::createTable` → `Table::deriveFormElements` → `Form::createForm`）：
+
+- 从表格列中剔除“仅表格”元素（蛇形匹配）：`id`、`create_time`、`create_date`、`update_time`、`update_date`、`edit_delete`、`delete`、`view_delete`；剩余列按原序作为表单元素，末尾追加 `submit_reset`（base 模块的提交/重置按钮，引用 `@SubmitReset`）。
+- 例：`-e id,name,select_dept,select_term,status,ordernum,create_time,edit_delete` → 表单元素 `name, select_dept, select_term, status, ordernum, submit_reset`。
+- 表单与表格**同名并共享控制器/中文名**（lang 键 `{模块} module {名蛇形}` 一致），元素中文名在建表时已写入 lang，所以建表单过程一般不再重复询问；`select_` 前缀列照常生成 SelectModel 子类。
+- 边界：`-e` 未传列、或列全部是“仅表格”元素 → 无可用表单列，**跳过**建表单；`-F/--no-form` 强制不建；`-N` 只影响控制器不影响自动建表单（要都跳过用 `-N -F`）。自动建表单后模式仍回到 table。
+
 ## 常见工作流示例
 
 ```bash
@@ -81,6 +98,7 @@ composer xqkeji:use -- edu                 # 1) 切到 edu 模块
 composer xqkeji:form Article -e title,content   # 2) 建表单（自动切表单模式）
 composer xqkeji:element cover -c -y=Image       # 3) 单独加一个元素
 composer xqkeji:form Article -a                   #    或：向已有表单交互式追加元素
-composer xqkeji:table Article -e id,title,status,edit_delete  # 4) 建表格（自动建控制器+菜单）
+composer xqkeji:table Article -e id,title,status,edit_delete  # 4) 建表格（自动建控制器+菜单，并自动派生同名表单）
+composer xqkeji:table Article -e id,title,status,edit_delete -F  #    加 -F 则不自动建表单
 composer xqkeji:table Article -a                  #    向已有表格追加一列
 ```

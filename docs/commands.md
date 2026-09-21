@@ -458,6 +458,8 @@
 | `--tree` | -T | 不需要值 | 否 | 创建树形表格（继承 TreegridTable） |
 | `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数） |
 | `--no-controller` | -N | 不需要值 | 否 | 仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合 |
+| `--controller-file` | -f | 不需要值 | 否 | 生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件 |
+| `--no-form` | -F | 不需要值 | 否 | 创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单） |
 | `--add` | -a | 不需要值 | 否 | 向【已存在】的表格交互式追加列元素：先列出现有列，选择插入位置（某列之后/最前面），新元素按 xqkeji:element 流程创建 |
 
 ### 帮助 / 示例
@@ -488,6 +490,21 @@
   composer xqkeji:table User -N -e id -e Username
   composer xqkeji:table User -T -N
 
+  # 建表格时自动同时创建同名表单（去掉 id/时间戳/操作列，末尾加 submit_reset）
+  composer xqkeji:table course -e id,name,select_dept,select_term,status,ordernum,create_time,edit_delete
+  #   → 自动建表单 Course，表单元素为 name, select_dept, select_term, status, ordernum, submit_reset
+
+  # 建表格时【不】自动创建配套表单
+  composer xqkeji:table course -e id,name,status,edit_delete -F
+  composer xqkeji:table course -e id,name,status,edit_delete --no-form
+
+  # 默认使用虚拟控制器（不生成 controller/{Class}.php，仅初始化 acl/menu/lang）
+  composer xqkeji:table course -e id,name,status,edit_delete
+
+  # 需要控制器实体文件时才加 -f/--controller-file（生成 controller/Course.php）
+  composer xqkeji:table course -e id,name,status,edit_delete -f
+  composer xqkeji:table course -e id,name,status,edit_delete --controller-file
+
   # 向【已存在】的表格交互式追加列元素（先列出现有列，再选插入位置）
   composer xqkeji:table User -a
   composer xqkeji:table User --add
@@ -510,6 +527,9 @@
   - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
   - 需要先使用 xqkeji:use 切换到目标模块
   - 使用 -a/--add 向【已存在】的表格追加列元素：先显示当前列列表，输入编号选择在某列后插入（0/回车 = 插到第一列前面），随后按提示输入元素名并按 xqkeji:element 的流程创建（表格模式，可交互选择类型）；若同名元素已存在于 base 或当前模块则直接按 @/~ 引用，不重复创建；-a 与创建新表格互斥（带 -a 时只插入、不新建表格、不涉及控制器/acl/menu/lang）
+  - 【默认】建表格时会用 -e 传入的表格列自动派生并创建一个同名表单（form/{大驼峰}.php 及所需 form/element/）：从表格列中剔除“仅表格”元素 id、create_time、create_date、update_time、update_date、edit_delete、delete、view_delete（按蛇形名匹配），剩余列作为表单元素，末尾追加 submit_reset（base 模块的提交/重置按钮，引用为 @SubmitReset）；表单与表格同名并共享控制器与中文名，元素中文名在建表时已写入 lang，建表单过程一般不再重复询问；select_ 前缀列照常生成 SelectModel 子类
+  - 使用 -F/--no-form 关闭上述自动建表单行为，仅创建表格；当 -e 未传列、或表格列全部是“仅表格”元素时，本就不会生成表单（无可用表单列）；-N（仅建表不建控制器）不影响该自动建表单逻辑，如需两者都跳过可同时使用 -N -F
+  - 控制器默认使用【虚拟控制器】：普通表格不会生成 controller/{Class}.php 实体文件，仅初始化 acl.php/menu.php/zh_cn.php；只要 acl.php 里有该控制器与动作的定义，框架即按约定解析动作、控制器即“存在”。需要实体文件时加 -f/--controller-file（等价 xqkeji:controller 的 -f/--file 语义）；该参数仅对普通表格生效，树状表格仍会复制 controller/{表名}/ 下的动作类文件（admin/add/move 等）
 ```
 
 ## xqkeji:element

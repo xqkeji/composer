@@ -8,6 +8,7 @@ use Composer\IO\IOInterface;
 class Form
 {
     use PathTrait;
+    use ElInsertTrait;
 
     private IOInterface $io;
     private Composer $composer;
@@ -124,6 +125,218 @@ class Form
 
         // 自动切换为表单模式
         $this->context->switchMode('form');
+    }
+
+    /**
+     * 向【已存在】的表单交互式追加一个元素（xqkeji:form 的 -a/--add）。
+     *
+     * 流程：读取当前模块的表单类文件 → 列出 protected $el 现有元素（Tab 表单可进入某个 Tab 内部选择）
+     * → 交互选择插入位置（某个元素之后 / 第一个元素之前）→ 交互确定新元素名（select_ 走 SelectModel 子类，
+     * 其余复用 xqkeji:element 的类型/项目列表创建流程）→ 以文本插入方式把引用写回 $el。
+     */
+    public function addElementToForm(string $formName, $input = null, $output = null): void
+    {
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $formName)) {
+            $this->io->write('<error>表单名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
+            $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return;
+        }
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在</error>");
+            return;
+        }
+
+        $className = $this->toCamelCase($formName);
+        $formFile = $modulePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!is_file($formFile)) {
+            $this->io->write("<error>表单不存在: {$formFile}</error>");
+            $this->io->write("<comment>  请先使用 composer xqkeji:form {$formName} 创建表单</comment>");
+            return;
+        }
+
+        $content = file_get_contents($formFile);
+        if ($content === false) {
+            $this->io->write("<error>读取表单文件失败: {$formFile}</error>");
+            return;
+        }
+        $open = $this->elArrayOpen($content);
+        if ($open === null) {
+            $this->io->write("<error>无法在表单中定位 protected \$el 数组: {$formFile}</error>");
+            return;
+        }
+        $children = $this->elScanItems($content, $open);
+
+        // 解析插入目标：targetOpen=目标数组的 '[' 下标，targetIndex=插入位置（0=最前），defaultIndent=空数组展开缩进
+        $targetOpen = $open;
+        $targetIndex = 0;
+        $defaultIndent = '        ';
+        $positionDesc = '第一个元素之前';
+
+        if (empty($children)) {
+            $this->io->write('<comment>当前表单暂无元素，新元素将作为第一个元素。</comment>');
+        } else {
+            if (!$this->io->isInteractive()) {
+                $this->io->write('<error>交互模式不可用，无法选择插入位置（请在终端下运行）</error>');
+                return;
+            }
+
+            $this->io->write("<info>表单 '{$className}' 当前元素列表：</info>");
+            $topInfo = [];
+            foreach ($children as $idx => $item) {
+                $text = $this->elItemText($content, $item);
+                $innerOpen = $this->elTabInnerOpen($content, $item);
+                if ($innerOpen !== null) {
+                    $cnt = count($this->elScanItems($content, $innerOpen));
+                    $label = $this->elTabLabel($text, $cnt);
+                    $topInfo[$idx] = ['tab' => true, 'innerOpen' => $innerOpen, 'label' => $label];
+                } else {
+                    $ref = $this->elRefName($text);
+                    $label = ($ref !== null) ? $ref : $text;
+                    $topInfo[$idx] = ['tab' => false, 'label' => $label];
+                }
+                $this->io->write('  [' . ($idx + 1) . "] {$label}");
+            }
+            $this->io->write('');
+
+            $max = count($children);
+            $answer = trim((string)$this->io->ask(
+                "<question>请选择在哪个元素【后面】添加（编号 1-{$max}；0 或直接回车 = 插入到第一个元素前面）:</question> ",
+                '0'
+            ));
+            if ($answer === '') {
+                $answer = '0';
+            }
+            if (!ctype_digit($answer) || (int)$answer < 0 || (int)$answer > $max) {
+                $this->io->write('<error>无效编号，已取消</error>');
+                return;
+            }
+            $chosen = (int)$answer;
+
+            if ($chosen === 0) {
+                // 已在默认值中（最前面）
+            } elseif (!$topInfo[$chosen - 1]['tab']) {
+                $targetIndex = $chosen;
+                $positionDesc = "元素 {$topInfo[$chosen - 1]['label']} 之后";
+            } else {
+                $tab = $topInfo[$chosen - 1];
+                $innerChildren = $this->elScanItems($content, $tab['innerOpen']);
+                $targetOpen = $tab['innerOpen'];
+                $defaultIndent = '                ';
+
+                if (empty($innerChildren)) {
+                    $targetIndex = 0;
+                    $positionDesc = "Tab『{$tab['label']}』的第一个元素位置";
+                } else {
+                    $this->io->write('');
+                    $this->io->write("<info>Tab『{$tab['label']}』内的元素：</info>");
+                    foreach ($innerChildren as $j => $it) {
+                        $txt = $this->elItemText($content, $it);
+                        $rn = $this->elRefName($txt);
+                        $this->io->write('  [' . ($j + 1) . '] ' . ($rn !== null ? $rn : $txt));
+                    }
+                    $imax = count($innerChildren);
+                    $sub = trim((string)$this->io->ask(
+                        "<question>在该 Tab 内哪个元素后插入（编号 1-{$imax}；0 或直接回车 = Tab 内第一个元素前面）:</question> ",
+                        '0'
+                    ));
+                    if ($sub === '') {
+                        $sub = '0';
+                    }
+                    if (!ctype_digit($sub) || (int)$sub < 0 || (int)$sub > $imax) {
+                        $this->io->write('<error>无效编号，已取消</error>');
+                        return;
+                    }
+                    $targetIndex = (int)$sub;
+                    $positionDesc = $targetIndex === 0
+                        ? "Tab『{$tab['label']}』第一个元素之前"
+                        : "Tab『{$tab['label']}』内第 {$targetIndex} 个元素之后";
+                }
+            }
+        }
+
+        // 新元素名称
+        $elName = trim((string)$this->io->ask(
+            '<question>请输入要添加的元素名称（如 Status 或 select_dept，留空取消）:</question> ',
+            ''
+        ));
+        if ($elName === '') {
+            $this->io->write('<comment>已取消</comment>');
+            return;
+        }
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elName)) {
+            $this->io->write('<error>元素名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $ref = $this->resolveOrAddFormElement($modulePath, $elName, $currentModule);
+        if ($ref === null) {
+            return;
+        }
+
+        $newContent = $this->elInsertRef($content, $targetOpen, $targetIndex, $ref, $defaultIndent);
+        if (file_put_contents($formFile, $newContent) === false) {
+            $this->io->write("<error>写入表单文件失败: {$formFile}</error>");
+            return;
+        }
+        $this->io->write("<info>✓ 已将元素 '{$ref}' 添加到表单 {$className}（{$positionDesc}）</info>");
+        $this->io->write("  文件: {$formFile}");
+    }
+
+    /**
+     * 交互式追加元素专用：查找或创建表单元素，返回其在 $el 中的引用（@X / ~X）；创建失败返回 null。
+     *
+     * 与 createForm 的 processElement 不同：新元素走 xqkeji:element 的完整创建流程（可选类型 / 项目列表），
+     * 而非仅生成默认 Text 元素；select_ 前缀沿用 SelectModel 空子类的约定。
+     */
+    private function resolveOrAddFormElement(string $modulePath, string $elementName, string $currentModule): ?string
+    {
+        $className = $this->toCamelCase($elementName);
+        $configName = $this->toSnakeCase($elementName);
+
+        if ($this->findElementInModule('base', $className) !== null) {
+            $this->io->write("<info>✓ 复用 base 模块元素: $className</info>");
+            return '@' . $className;
+        }
+        if ($this->findElementInModule($currentModule, $className) !== null) {
+            $this->io->write("<info>✓ 复用当前模块元素: $className</info>");
+            return '~' . $className;
+        }
+
+        $elementPath = $modulePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . 'element';
+        if (!is_dir($elementPath)) {
+            mkdir($elementPath, 0755, true);
+        }
+
+        // select_ 前缀：生成 SelectModel 空子类，不询问类型
+        if (strpos($configName, 'select_') === 0) {
+            $this->createElementFile($elementPath, $className, $configName, '', true);
+            $this->io->write("<info>✓ 已创建表单元素（SelectModel 子类）: $className</info>");
+            return '~' . $className;
+        }
+
+        // 其余：复用 xqkeji:element 创建流程（交互模式弹类型选择、Select/Check/Radio 弹项目列表）
+        $this->context->switchMode('form');
+        $interactive = $this->io->isInteractive();
+        $element = new Element($this->io, $this->composer);
+        $element->createElement(
+            $elementName,
+            $interactive ? '' : null,
+            $interactive ? '' : null,
+            null,
+            null
+        );
+
+        if (is_file($elementPath . DIRECTORY_SEPARATOR . $className . '.php')) {
+            return '~' . $className;
+        }
+        $this->io->write('<error>元素创建失败，已取消插入</error>');
+        return null;
     }
 
     /**

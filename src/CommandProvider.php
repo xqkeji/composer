@@ -12,6 +12,7 @@ use xqkeji\composer\command\FormCommand;
 use xqkeji\composer\command\TableCommand;
 use xqkeji\composer\command\ElementCommand;
 use xqkeji\composer\command\PathCommand;
+use xqkeji\composer\command\DocCommand;
 
 class CommandProvider implements CommandProviderCapability
 {
@@ -28,6 +29,7 @@ class CommandProvider implements CommandProviderCapability
             new TableCommand(),
             new ElementCommand(),
             new PathCommand(),
+            new DocCommand(),
         ];
     }
 }

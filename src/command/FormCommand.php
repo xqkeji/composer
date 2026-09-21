@@ -20,6 +20,7 @@ class FormCommand extends BaseCommand
             ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表单元素列表（可多次使用，或用逗号分隔：Username,Password）')
             ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
             ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
+            ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类）')
             ->setHelp(<<<'EOF'
 创建表单类和表单元素
 
@@ -45,6 +46,10 @@ class FormCommand extends BaseCommand
   <comment># 创建Tab表单（中文名称不加引号）</comment>
   composer xqkeji:form User -b 基本信息 -e username -e password -b 授权信息 -e auth -e csrf
 
+  <comment># 向【已存在】的表单交互式追加元素（先列出现有元素，再选插入位置）</comment>
+  composer xqkeji:form User -a
+  composer xqkeji:form User --add
+
 <info>说明：</info>
 
   - 表单名支持大小写，自动转为大驼峰（如 user → User、user_login → UserLogin）
@@ -64,6 +69,8 @@ class FormCommand extends BaseCommand
   - Tab中文名称可加引号也可不加引号
   - 使用 -g/--global 添加Tab之外的全局元素
   - 需要先使用 xqkeji:use 切换到目标模块
+  - 使用 -a/--add 向【已存在】的表单追加元素：先显示当前元素列表，输入编号选择在某个元素后插入（0/回车 = 插到第一个元素前面；选中 Tab 分组时会进入该 Tab 内部再选位置），随后按提示输入元素名并按 xqkeji:element 的流程创建（可交互选择类型、Select/Check/Radio 可交互输入项目列表）
+  - -a 追加时：元素名转蛇形后以 select_ 开头（如 select_dept）自动生成继承 SelectModel 的空子类且不询问类型；若同名元素已存在于 base 或当前模块则直接按 @/~ 引用，不重复创建；-a 与创建新表单互斥（带 -a 时只插入、不新建表单）
 
 EOF
             );
@@ -87,6 +94,13 @@ EOF
             return 1;
         }
         
+        // 交互式向已有表单追加元素（-a/--add）：不创建新表单，直接进入插入流程
+        if ($input->getOption('add')) {
+            $form = new Form($this->getIO(), $this->requireComposer());
+            $form->addElementToForm($name, $input, $output);
+            return 0;
+        }
+
         // 解析Tab和全局元素（从 argv 识别 -b/--tab 与 -g/--global 分组）
         list($tabGroups, $globalElements) = $this->parseTabAndGlobal($input, $name);
 

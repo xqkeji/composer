@@ -8,6 +8,7 @@ use Composer\IO\IOInterface;
 class Table
 {
     use PathTrait;
+    use ElInsertTrait;
 
     private IOInterface $io;
     private Composer $composer;
@@ -143,6 +144,159 @@ class Table
 
         // 自动切换为表格模式
         $this->context->switchMode('table');
+    }
+
+    /**
+     * 向【已存在】的表格交互式追加一个列元素（xqkeji:table 的 -a/--add）。
+     *
+     * 流程与表单一致：读取当前模块的表格类文件 → 列出 protected $el 现有列 → 交互选择插入位置
+     * （某一列之后 / 第一列之前）→ 交互确定新元素名（复用 xqkeji:element 的创建流程）→ 文本插入写回 $el。
+     * 表格无 select_ / Tab 概念。
+     */
+    public function addElementToTable(string $tableName, $input = null, $output = null): void
+    {
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
+            $this->io->write('<error>表格名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
+            $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return;
+        }
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在</error>");
+            return;
+        }
+
+        $className = $this->toCamelCase($tableName);
+        $tableFile = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!is_file($tableFile)) {
+            $this->io->write("<error>表格不存在: {$tableFile}</error>");
+            $this->io->write("<comment>  请先使用 composer xqkeji:table {$tableName} 创建表格</comment>");
+            return;
+        }
+
+        $content = file_get_contents($tableFile);
+        if ($content === false) {
+            $this->io->write("<error>读取表格文件失败: {$tableFile}</error>");
+            return;
+        }
+        $open = $this->elArrayOpen($content);
+        if ($open === null) {
+            $this->io->write("<error>无法在表格中定位 protected \$el 数组: {$tableFile}</error>");
+            return;
+        }
+        $children = $this->elScanItems($content, $open);
+
+        $targetIndex = 0;
+        $defaultIndent = '        ';
+        $positionDesc = '第一个元素之前';
+
+        if (empty($children)) {
+            $this->io->write('<comment>当前表格暂无列元素，新元素将作为第一列。</comment>');
+        } else {
+            if (!$this->io->isInteractive()) {
+                $this->io->write('<error>交互模式不可用，无法选择插入位置（请在终端下运行）</error>');
+                return;
+            }
+
+            $this->io->write("<info>表格 '{$className}' 当前列元素列表：</info>");
+            foreach ($children as $idx => $item) {
+                $text = $this->elItemText($content, $item);
+                $ref = $this->elRefName($text);
+                $this->io->write('  [' . ($idx + 1) . '] ' . ($ref !== null ? $ref : $text));
+            }
+            $this->io->write('');
+
+            $max = count($children);
+            $answer = trim((string)$this->io->ask(
+                "<question>请选择在哪一列【后面】添加（编号 1-{$max}；0 或直接回车 = 插入到第一列前面）:</question> ",
+                '0'
+            ));
+            if ($answer === '') {
+                $answer = '0';
+            }
+            if (!ctype_digit($answer) || (int)$answer < 0 || (int)$answer > $max) {
+                $this->io->write('<error>无效编号，已取消</error>');
+                return;
+            }
+            $chosen = (int)$answer;
+            if ($chosen > 0) {
+                $targetIndex = $chosen;
+                $ref = $this->elRefName($this->elItemText($content, $children[$chosen - 1]));
+                $positionDesc = '元素 ' . ($ref !== null ? $ref : "第 {$chosen} 列") . ' 之后';
+            }
+        }
+
+        $elName = trim((string)$this->io->ask(
+            '<question>请输入要添加的元素名称（留空取消）:</question> ',
+            ''
+        ));
+        if ($elName === '') {
+            $this->io->write('<comment>已取消</comment>');
+            return;
+        }
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elName)) {
+            $this->io->write('<error>元素名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $ref = $this->resolveOrAddTableElement($modulePath, $elName, $currentModule);
+        if ($ref === null) {
+            return;
+        }
+
+        $newContent = $this->elInsertRef($content, $open, $targetIndex, $ref, $defaultIndent);
+        if (file_put_contents($tableFile, $newContent) === false) {
+            $this->io->write("<error>写入表格文件失败: {$tableFile}</error>");
+            return;
+        }
+        $this->io->write("<info>✓ 已将元素 '{$ref}' 添加到表格 {$className}（{$positionDesc}）</info>");
+        $this->io->write("  文件: {$tableFile}");
+    }
+
+    /**
+     * 交互式追加元素专用：查找或创建表格列元素，返回其在 $el 中的引用（@X / ~X）；创建失败返回 null。
+     *
+     * 新元素走 xqkeji:element 的创建流程（表格模式，交互可选类型），而非仅生成默认 ListItem。
+     */
+    private function resolveOrAddTableElement(string $modulePath, string $elementName, string $currentModule): ?string
+    {
+        $className = $this->toCamelCase($elementName);
+
+        if ($this->findElementInModule('base', $className) !== null) {
+            $this->io->write("<info>✓ 复用 base 模块元素: $className</info>");
+            return '@' . $className;
+        }
+        if ($this->findElementInModule($currentModule, $className) !== null) {
+            $this->io->write("<info>✓ 复用当前模块元素: $className</info>");
+            return '~' . $className;
+        }
+
+        $elementPath = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
+        if (!is_dir($elementPath)) {
+            mkdir($elementPath, 0755, true);
+        }
+
+        $this->context->switchMode('table');
+        $interactive = $this->io->isInteractive();
+        $element = new Element($this->io, $this->composer);
+        $element->createElement(
+            $elementName,
+            $interactive ? '' : null,
+            $interactive ? '' : null,
+            null,
+            null
+        );
+
+        if (is_file($elementPath . DIRECTORY_SEPARATOR . $className . '.php')) {
+            return '~' . $className;
+        }
+        $this->io->write('<error>元素创建失败，已取消插入</error>');
+        return null;
     }
 
     /**

@@ -435,7 +435,15 @@
                     "acceptValue": false,
                     "valueMode": "none",
                     "isArray": false,
-                    "description": "仅修改 composer.json，不自动运行 composer update"
+                    "description": "仅修改 composer.json，不自动运行 composer update/require"
+                },
+                {
+                    "name": "require",
+                    "shortcut": null,
+                    "acceptValue": false,
+                    "valueMode": "none",
+                    "isArray": false,
+                    "description": "强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包）"
                 },
                 {
                     "name": "no-alias",
@@ -446,7 +454,7 @@
                     "description": "不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束）"
                 }
             ],
-            "help": "将一个 composer 包注册为本地路径包（本地开发/联调用）\n\n<info>用法示例：</info>\n\n  <comment># 将本地包注册为 path 仓库（默认符号链接，自动 composer update）</comment>\n  composer xqkeji:path xqkeji/composer ../composer\n\n  <comment># 指定绝对路径</comment>\n  composer xqkeji:path xqkeji/composer F:/docker/code/php/composer\n\n  <comment># 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）</comment>\n  composer xqkeji:path xqkeji/composer ../composer --copy\n\n  <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update 包名）</comment>\n  composer xqkeji:path xqkeji/composer ../composer --no-update\n\n<info>说明：</info>\n\n  - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，symlink=true 默认）\n  - 同时在 require 中追加 \"包名\": \"*\"（若已存在则更新）\n  - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）\n  - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包\n  - 已存在同名 path 仓库则覆盖更新（幂等）\n  - 默认自动运行 composer update 包名；--no-update 可跳过\n  - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy\n  - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过\n  - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）\n"
+            "help": "将一个 composer 包注册为本地路径包（本地开发/联调用）\n\n<info>用法示例：</info>\n\n  <comment># 将本地包注册为 path 仓库（默认符号链接，自动 composer update）</comment>\n  composer xqkeji:path xqkeji/composer ../composer\n\n  <comment># 指定绝对路径</comment>\n  composer xqkeji:path xqkeji/composer F:/docker/code/php/composer\n\n  <comment># 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）</comment>\n  composer xqkeji:path xqkeji/composer ../composer --copy\n\n  <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）</comment>\n  composer xqkeji:path xqkeji/composer ../composer --no-update\n\n  <comment># 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）</comment>\n  composer xqkeji:path xqkeji/xq-app-content ../xq-app-content\n\n  <comment># 强制走 composer require（即便包已存在也重新按 require 流程处理）</comment>\n  composer xqkeji:path xqkeji/composer ../composer --require\n\n<info>说明：</info>\n\n  - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，symlink=true 默认）\n  - 同时在 require 中追加 \"包名\": \"*\"（若已存在则更新）\n  - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）\n  - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包\n  - 已存在同名 path 仓库则覆盖更新（幂等）\n  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程\n  - 默认自动运行上述 update/require；--no-update 可跳过\n  - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy\n  - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过\n  - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）\n"
         },
         {
             "name": "xqkeji:doc",

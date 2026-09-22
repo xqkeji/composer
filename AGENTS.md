@@ -49,7 +49,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
-| `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调） |
+| `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地 |
 
 表单/表格类里最核心的字段：`$name`（蛇形配置名）、`$el`（元素/列引用数组）、表格另有 `$foot`（操作栏）与可选 `$isDrag`（拖拽排序）。
 
@@ -64,7 +64,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
-- `xqkeji:path {package} {path} [--copy|--no-update|--no-alias]` — 注册本地 path 包。
+- `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
 - `xqkeji:doc [-o 输出目录]` — 反射导出 `docs/commands.json` + `commands.md`。
 
 ## `-a` 追加元素（form/table）行为要点

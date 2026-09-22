@@ -632,7 +632,8 @@
 | 选项 | 短名 | 取值 | 数组 | 说明 |
 | --- | --- | --- | --- | --- |
 | `--copy` | - | 不需要值 | 否 | 使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境 |
-| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update |
+| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update/require |
+| `--require` | - | 不需要值 | 否 | 强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包） |
 | `--no-alias` | - | 不需要值 | 否 | 不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束） |
 
 ### 帮助 / 示例
@@ -651,8 +652,14 @@
   # 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）
   composer xqkeji:path xqkeji/composer ../composer --copy
 
-  # 仅修改 composer.json，不自动更新（之后手动运行 composer update 包名）
+  # 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）
   composer xqkeji:path xqkeji/composer ../composer --no-update
+
+  # 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）
+  composer xqkeji:path xqkeji/xq-app-content ../xq-app-content
+
+  # 强制走 composer require（即便包已存在也重新按 require 流程处理）
+  composer xqkeji:path xqkeji/composer ../composer --require
 
 说明：
 
@@ -661,7 +668,8 @@
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
-  - 默认自动运行 composer update 包名；--no-update 可跳过
+  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
+  - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
   - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）

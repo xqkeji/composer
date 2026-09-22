@@ -19,7 +19,8 @@ class PathCommand extends BaseCommand
             ->addArgument('package', InputArgument::REQUIRED, '包名（如 xqkeji/composer）')
             ->addArgument('path', InputArgument::REQUIRED, '本地路径（包根目录，需包含 composer.json）')
             ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境')
-            ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update')
+            ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update/require')
+            ->addOption('require', null, InputOption::VALUE_NONE, '强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包）')
             ->addOption('no-alias', null, InputOption::VALUE_NONE, '不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束）')
             ->setHelp(<<<'EOF'
 将一个 composer 包注册为本地路径包（本地开发/联调用）
@@ -35,8 +36,14 @@ class PathCommand extends BaseCommand
   <comment># 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）</comment>
   composer xqkeji:path xqkeji/composer ../composer --copy
 
-  <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update 包名）</comment>
+  <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）</comment>
   composer xqkeji:path xqkeji/composer ../composer --no-update
+
+  <comment># 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）</comment>
+  composer xqkeji:path xqkeji/xq-app-content ../xq-app-content
+
+  <comment># 强制走 composer require（即便包已存在也重新按 require 流程处理）</comment>
+  composer xqkeji:path xqkeji/composer ../composer --require
 
 <info>说明：</info>
 
@@ -45,7 +52,8 @@ class PathCommand extends BaseCommand
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
-  - 默认自动运行 composer update 包名；--no-update 可跳过
+  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
+  - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
   - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
@@ -60,6 +68,7 @@ EOF
         $rawPath = trim((string) $input->getArgument('path'));
         $useCopy = (bool) $input->getOption('copy');
         $noUpdate = (bool) $input->getOption('no-update');
+        $forceRequire = (bool) $input->getOption('require');
         $noAlias = (bool) $input->getOption('no-alias');
 
         // 校验包名
@@ -157,33 +166,63 @@ EOF
         $output->writeln("  require.{$package} = *");
         $output->writeln("  minimum-stability = dev, prefer-stable = true");
 
-        // 5) 自动 composer update
+        // 5) 自动安装：包未安装 → composer require（完整安装事件流，含模块包 post-package-install 钩子/插件激活）；
+        //    包已存在 → composer update（转为本地路径包）。--require 可强制走 require 流程。
+        $installed = $this->isPackageInstalled($package);
+        $useRequire = $forceRequire || !$installed;
+        $verb = $useRequire ? 'require' : 'update';
+
         if ($noUpdate) {
             $output->writeln('');
-            $output->writeln("<comment>已跳过自动更新，请手动运行：composer update {$package}</comment>");
+            $output->writeln("<comment>已跳过自动执行，请手动运行：composer {$verb} {$package}</comment>");
             return 0;
         }
 
         $output->writeln('');
-        $output->writeln("<info>运行 composer update {$package} ...</info>");
+        if ($useRequire) {
+            $output->writeln("<info>该包尚未安装，运行 composer require {$package}（触发与 composer require 相同的安装事件）...</info>");
+        } else {
+            $output->writeln("<info>包已安装，运行 composer update {$package} 将其转为本地路径包 ...</info>");
+        }
 
         $application = $this->getApplication();
         $application->resetComposer();
-        $update = $application->find('update');
-        $updateInput = new ArrayInput([
-            'command' => 'update',
-            'packages' => [$package],
-            '--no-interaction' => true,
-        ]);
-        $code = $update->run($updateInput, $output);
+        $installer = $application->find($verb);
+        // require 需显式约束以保持 "*"（避免解析成具体版本改写约束）；update 只接包名
+        $installerInput = $useRequire
+            ? new ArrayInput([
+                'command' => 'require',
+                'packages' => ["{$package}:*"],
+                '--no-interaction' => true,
+            ])
+            : new ArrayInput([
+                'command' => 'update',
+                'packages' => [$package],
+                '--no-interaction' => true,
+            ]);
+        $code = $installer->run($installerInput, $output);
 
         if ($code !== 0) {
-            $output->writeln("<error>composer update 退出码 {$code}，请检查上方输出</error>");
+            $output->writeln("<error>composer {$verb} 退出码 {$code}，请检查上方输出</error>");
             return $code;
         }
 
-        $output->writeln("<info>完成：{$package} 已链接为本地路径包（" . ($useCopy ? '复制' : '符号链接') . "）</info>");
+        $output->writeln("<info>完成：{$package} 已" . ($useRequire ? '安装' : '更新') . "为本地路径包（" . ($useCopy ? '复制' : '符号链接') . "）</info>");
         return 0;
+    }
+
+    /**
+     * 判断某包当前是否已安装（读本地仓库/installed.json，不联网、不受刚写入的 require 影响）。
+     * 用于决定 xqkeji:path 用 composer require（未安装，走完整安装事件流）还是 update（已存在，转本地路径）。
+     */
+    private function isPackageInstalled(string $package): bool
+    {
+        try {
+            $local = $this->requireComposer()->getRepositoryManager()->getLocalRepository();
+            return $local->findPackage($package, '*') !== null;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**

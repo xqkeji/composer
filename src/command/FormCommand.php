@@ -21,6 +21,7 @@ class FormCommand extends BaseCommand
             ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
             ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
             ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类）')
+            ->addOption('search', 's', InputOption::VALUE_NONE, '创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a|b|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 [\'@X\', \'name\' => \'xq-s-字段,操作\'] 数组项；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥')
             ->setHelp(<<<'EOF'
 创建表单类和表单元素
 
@@ -46,6 +47,15 @@ class FormCommand extends BaseCommand
   <comment># 创建Tab表单（中文名称不加引号）</comment>
   composer xqkeji:form User -b 基本信息 -e username -e password -b 授权信息 -e auth -e csrf
 
+  <comment># 创建搜索表单（继承 xqkeji\form\SearchForm；有输入的元素交互询问搜索字段与操作）</comment>
+  composer xqkeji:form UserSearch -s -e SearchKey,Status,SearchSubmit
+  <comment>#   SearchKey → 问字段(默认 search_key，输入 username|fullname)、问操作(默认 like)</comment>
+  <comment>#   Status → 问字段(默认 status)、问操作(默认 eq)；SearchSubmit → 无输入，直接引用</comment>
+
+  <comment># 内联搜索规格免交互（xq-s- 前缀可省略，操作可省默认 like/eq）</comment>
+  composer xqkeji:form UserSearch -s -e "SearchKey=username|fullname,like" -e "Status=status,eq" -e SearchSubmit
+  composer xqkeji:form UserSearch -s -e "SearchKey=xq-s-username|fullname,like"
+
   <comment># 向【已存在】的表单交互式追加元素（先列出现有元素，再选插入位置）</comment>
   composer xqkeji:form User -a
   composer xqkeji:form User --add
@@ -65,6 +75,11 @@ class FormCommand extends BaseCommand
   - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
+  - 使用 -s/--search 创建搜索表单：生成的类 use xqkeji\form\SearchForm 并 extends SearchForm，自带 $attrs（method=get + d-flex 行内排版，与手写搜索表单一致）；目录、$name 蛇形、@/~ 元素引用、select_ 约定、中文名入 lang、自动切表单模式均与普通表单相同；与同名普通表单会因类文件同名冲突（form/{Class}.php 已存在则报错），建议起名如 {控制器}Search
+  - 搜索表单元素规格：除无输入控件（类名或继承链以 Submit/Reset/Button/Hidden 结尾，如 @SearchSubmit、@SubmitReset，按普通字符串引用）外，每个元素的名字属性都写成 xq-s- 规格：$el 数组项 [ '@元素', 'name' => 'xq-s-字段|字段,操作' ]。字段多选用 | 分隔表示“或”搜索；操作符用词别名（GET 防 URL 污染）：like 模糊、eq =、ne <>、gt >、gte >=、lt <、lte <=、in、nin、regex
+  - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
+  - 向 SearchForm 用 -a 追加元素时同样会询问搜索字段与操作并插入数组项（现有列表中以 "@X name='xq-s-…'" 形式展示）
+  - -s 与 -b/-g 互斥：同时指定会报错退出（基类只能有一个）
   - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
   - Tab中文名称可加引号也可不加引号
   - 使用 -g/--global 添加Tab之外的全局元素
@@ -107,10 +122,15 @@ EOF
         // Tab/全局表单的元素已通过 parseTabAndGlobal 归入对应分组；
         // 普通表单（无 -b/-g）的元素来自 -e/--element 选项（支持逗号分隔与重复），需传入 createForm
         $isTabForm = !empty($tabGroups) || !empty($globalElements);
+        $isSearchForm = (bool) $input->getOption('search');
+        if ($isSearchForm && $isTabForm) {
+            $output->writeln('<error>-s/--search 与 -b/--tab、-g/--global 互斥（基类只能有一个）</error>');
+            return 1;
+        }
         $elements = $this->flattenElements($input->getOption('element'));
 
         $form = new Form($this->getIO(), $this->requireComposer());
-        $form->createForm($name, $isTabForm ? [] : $elements, $input, $output, $tabGroups, $globalElements);
+        $form->createForm($name, $isTabForm ? [] : $elements, $input, $output, $tabGroups, $globalElements, $isSearchForm);
 
         return 0;
     }

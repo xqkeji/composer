@@ -307,6 +307,86 @@ class Table
     }
 
     /**
+     * 为【已存在】的表格类启用拖动排序：补写/改写 protected $isDrag = true;（幂等）。
+     *
+     * 与新建表格（-D）布局一致：属性插在 $el 属性（含其上方独占注释行）之前。
+     * 返回 true 表示已处理完毕（含跳过与出错，调用方无需继续）；
+     * 返回 false 表示表格类不存在，调用方可回落到正常建表流程。
+     */
+    public function enableDrag(string $tableName): bool
+    {
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
+            $this->io->write('<error>表格名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return true;
+        }
+
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
+            $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return true;
+        }
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在</error>");
+            return true;
+        }
+
+        $className = $this->toCamelCase($tableName);
+        $tableFile = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!is_file($tableFile)) {
+            return false;
+        }
+
+        $content = (string) file_get_contents($tableFile);
+
+        if (preg_match('/class\s+\w+\s+extends\s+TreegridTable/', $content)) {
+            $this->io->write("<comment>⊘ 表格 {$className} 为树状表格（TreegridTable），自带拖拽排序，无需 \$isDrag</comment>");
+            return true;
+        }
+
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $changed = false;
+
+        if (preg_match('/(protected\s+\$isDrag\s*=\s*)(true|false)/', $content, $m)) {
+            if ($m[2] === 'true') {
+                $this->io->write("<comment>⊘ 表格已是可拖动排序（\$isDrag = true），跳过: {$tableFile}</comment>");
+                return true;
+            }
+            $content = preg_replace('/(protected\s+\$isDrag\s*=\s*)false/', '${1}true', $content, 1);
+            $changed = true;
+            $action = "已将 \$isDrag 由 false 改为 true";
+        } else {
+            if (!preg_match('/^([ \t]*)protected\s+\$el\s*=/m', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $this->io->write("<error>无法在表格类中定位 \$el 属性，请手动添加 protected \$isDrag = true;: {$tableFile}</error>");
+                return true;
+            }
+            $lineOffset = $m[0][1];
+            $indent = $m[1][0];
+            // 若 $el 行上方紧邻独占注释行（如 "// 表格元素列表"），插到注释行之前，与新建表格布局一致
+            $before = substr($content, 0, $lineOffset);
+            if (preg_match('/([ \t]*\/\/[^\r\n]*\r?\n)$/', $before, $cm)) {
+                $lineOffset -= strlen($cm[0]);
+            }
+            $content = substr_replace(
+                $content,
+                $indent . 'protected $isDrag = true;' . $eol . $eol,
+                $lineOffset,
+                0
+            );
+            $changed = true;
+            $action = '已加入 protected $isDrag = true;';
+        }
+
+        if ($changed && file_put_contents($tableFile, $content) === false) {
+            $this->io->write("<error>写入表格文件失败: {$tableFile}</error>");
+            return true;
+        }
+        $this->io->write("<info>✓ 表格 {$className} {$action}（可拖动排序）</info>");
+        $this->io->write("  文件: {$tableFile}");
+        return true;
+    }
+
+    /**
      * 交互式追加元素专用：查找或创建表格列元素，返回其在 $el 中的引用（@X / ~X）；创建失败返回 null。
      *
      * 新元素走 xqkeji:element 的创建流程（表格模式，交互可选类型），而非仅生成默认 ListItem。

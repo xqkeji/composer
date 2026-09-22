@@ -45,8 +45,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:controller` | `controller/{Class}.php`（默认虚拟控制器，`-f` 才落地文件）；初始化 `config/acl.php`、`menu.php`、`zh_cn.php` |
 | `xqkeji:model` | `model/{Class}.php` |
 | `xqkeji:action` | 控制器动作类；动作名写入语言文件 |
-| `xqkeji:form` | `form/{Class}.php`（继承 `Form` 或 `TabForm`）+ 所需 `form/element/{El}.php`；表单中文名入 lang |
-| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
+| `xqkeji:form` | `form/{Class}.php`（继承 `Form`、`TabForm`（`-b`）或 `SearchForm`（`-s` 搜索表单，输入类元素带 `xq-s-字段,操作` 搜索规格、与 `-b/-g` 互斥））+ 所需 `form/element/{El}.php`；表单中文名入 lang |
+| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
 | `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地 |
@@ -60,8 +60,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:use {name} [-m|-c|-f|-T]` — 切换当前模块/控制器，或设置 form/table 模式。
 - `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类。
 - `xqkeji:model {name}` — 创建模型类。
-- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-a]` — 创建表单；`-a` 向**已存在**表单交互式追加元素。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列。
+- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
@@ -73,6 +73,16 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - 输入编号 = 在该元素**之后**插入；`0` 或回车 = 插到**第一个元素前面**；选中 Tab 分组会进入该 Tab 内部再选位置。
 - 新元素走 `xqkeji:element` 的创建流程（终端交互弹类型/项目列表）；`select_` 前缀直接生成 SelectModel 子类；同名已存在则按 `@/~` 复用不重建。
 - 用文本偏移方式写回 `$el`（`src/ElInsertTrait.php`），只插一行引用、保留文件其余内容与手工编辑。`-a` 只插入，不新建表单/表格、不涉及控制器/acl/menu/lang。
+- 目标是 `SearchForm` 子类时：现有数组项按 `@X name='xq-s-…'` 展示；新元素若为输入类会同样询问【搜索字段/搜索操作】并插入数组项（见下节），无输入控件仍插纯引用。
+
+## 搜索表单 `-s` 与 `xq-s-` 元素规格
+
+`xqkeji:form {name} -s` 生成继承 `xqkeji\form\SearchForm` 的搜索表单（GET 提交，生成类自带 `$attrs = ['method'=>'get','class'=>'d-flex …']`），与 `-b/-g` 互斥。搜索表单的输入元素必须声明搜索目标：
+
+- `$el` 条目写成数组项：`[ '@SearchKey', 'name' => 'xq-s-username|fullname,like' ]`；`xq-s-` 前缀固定，`|` 表示多字段“或”搜索，`,op` 为搜索操作。无输入控件（类名链尾含 submit/reset/button/hidden）仍写纯字符串引用。
+- **操作符用词别名**（符号 `= < >` 等会污染 GET URL）：`eq`(=) `ne`(<>) `gt`(>) `gte`(>=) `lt`(<) `lte`(<=) `in` `nin` `regex` `like`。
+- 规格来源优先级：**内联** `-e "元素=字段|字段,op"`（免询问）> **交互两问**（字段默认=元素名蛇形；操作默认：文本类元素 Text/Textarea/SearchKey 为 `like`，其余 `eq`）> **非交互默认值**（打印提示，等价直接回车）。内联规格可省略 `,op`、可带 `xq-s-` 前缀；非法则报错回退交互/默认。
+- 实现：`Form::buildSearchEntry`（判定+询问）、`Form::parseSearchSpec`（内联解析）、`Form::elementClassChain`（沿 `class X extends Y` 上溯判定），`ElInsertTrait::elInsertRef` 支持数组项多行插入。
 
 ## 建表格时控制器默认虚拟（`-f` 才落地实体文件）
 
@@ -98,6 +108,7 @@ composer xqkeji:use -- edu                 # 1) 切到 edu 模块
 composer xqkeji:form Article -e title,content   # 2) 建表单（自动切表单模式）
 composer xqkeji:element cover -c -y=Image       # 3) 单独加一个元素
 composer xqkeji:form Article -a                   #    或：向已有表单交互式追加元素
+composer xqkeji:form SearchUser -s -e "SearchKey=username|fullname,like" -e SearchSubmit  # 建搜索表单（内联规格免询问）
 composer xqkeji:table Article -e id,title,status,edit_delete  # 4) 建表格（自动建控制器+菜单，并自动派生同名表单）
 composer xqkeji:table Article -e id,title,status,edit_delete -F  #    加 -F 则不自动建表单
 composer xqkeji:table Article -a                  #    向已有表格追加一列

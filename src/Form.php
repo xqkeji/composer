@@ -24,7 +24,7 @@ class Form
     /**
      * 创建表单（公开方法）
      */
-    public function createForm(string $formName, array $elements = [], $input = null, $output = null, array $tabGroups = [], array $globalElements = []): void
+    public function createForm(string $formName, array $elements = [], $input = null, $output = null, array $tabGroups = [], array $globalElements = [], bool $isSearchForm = false): void
     {
         // 验证表单名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $formName)) {
@@ -102,15 +102,32 @@ class Form
                 }
 
                 foreach ($elements as $element) {
+                    // 搜索表单支持内联规格免交互：-e "SearchKey=字段|字段,op"（xq-s- 前缀可省略）
+                    $inlineSpec = null;
+                    $eqPos = strpos($element, '=');
+                    if ($eqPos !== false) {
+                        $inlineSpec = trim(substr($element, $eqPos + 1));
+                        $element = substr($element, 0, $eqPos);
+                        if (!$isSearchForm) {
+                            $this->io->write('<comment>⚠ 内联搜索规格（元素=字段,操作）仅搜索表单 -s 支持，已忽略</comment>');
+                            $inlineSpec = null;
+                        }
+                    }
+                    $element = trim($element);
+                    if ($element === '') {
+                        continue;
+                    }
                     $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output);
                     if ($elementRef !== null) {
-                        $elementRefs[] = $elementRef;
+                        $elementRefs[] = $isSearchForm
+                            ? $this->buildSearchEntry($elementRef, $inlineSpec, $currentModule)
+                            : $elementRef;
                     }
                 }
             }
 
             // 创建表单类
-            $this->createFormFile($formPath, $className, $configName, $elementRefs, $currentModule);
+            $this->createFormFile($formPath, $className, $configName, $elementRefs, $currentModule, $isSearchForm);
         }
 
         // 表单显示名统一解析中文名（设置 > 读取 lang > 交互提示；表单名=控制器名时共享同一键，自然复用已有中文）
@@ -125,6 +142,136 @@ class Form
 
         // 自动切换为表单模式
         $this->context->switchMode('form');
+    }
+
+    /**
+     * 搜索操作符全集（词别名，GET 安全；符号 = < > 等会污染 URL）
+     */
+    private const SEARCH_OPS = ['like', 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'regex'];
+
+    /**
+     * 无输入控件类名特征（词尾匹配，含继承链）：提交/重置/按钮/隐藏域不加搜索规格
+     */
+    private const SEARCH_NON_INPUT = '/(submit|reset|button|hidden)$/i';
+
+    /**
+     * 文本类元素（默认操作符 like，其余默认 eq）
+     */
+    private const SEARCH_TEXTISH = '/^(text|textarea|searchkey)$/i';
+
+    /**
+     * 为搜索表单元素构建 $el 条目：
+     *   - 无输入控件（Submit/Reset/Button/Hidden，含继承链）→ 返回纯引用字符串
+     *   - 其余 → 返回 ['ref' => '@X', 'name' => 'xq-s-字段|字段,操作'] 数组条目
+     * 规格来源优先级：内联（-e "元素=字段,op"）> 交互两问（字段 / 操作符）> 默认值（字段=元素名蛇形，op 文本类 like 其余 eq）。
+     */
+    private function buildSearchEntry(string $ref, ?string $inlineSpec, string $currentModule)
+    {
+        $className = substr($ref, 1);
+        $chain = $this->elementClassChain($ref, $currentModule);
+        foreach ($chain as $name) {
+            if (preg_match(self::SEARCH_NON_INPUT, $name)) {
+                return $ref;
+            }
+        }
+
+        $defaultFields = $this->toSnakeCase($className);
+        $textish = false;
+        foreach ($chain as $name) {
+            if (preg_match(self::SEARCH_TEXTISH, $name)) {
+                $textish = true;
+                break;
+            }
+        }
+        $defaultOp = $textish ? 'like' : 'eq';
+
+        if ($inlineSpec !== null && $inlineSpec !== '') {
+            $parsed = $this->parseSearchSpec($inlineSpec, $defaultOp);
+            if ($parsed !== null) {
+                return ['ref' => $ref, 'name' => 'xq-s-' . $parsed];
+            }
+            $this->io->write("<error>内联搜索规格无效：\"{$inlineSpec}\"（格式 字段[|字段][,操作]，操作 ∈ " . implode('/', self::SEARCH_OPS) . "），改为交互/默认</error>");
+        }
+
+        $fields = $defaultFields;
+        $op = $defaultOp;
+
+        if ($this->io->isInteractive()) {
+            $ans = $this->io->ask(
+                "<question>元素 {$className} 的搜索字段（多字段用 | 表示“或”，默认 {$defaultFields}）:</question> ",
+                $defaultFields
+            );
+            $ans = trim((string) $ans);
+            if ($ans !== '' && preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\|[A-Za-z_][A-Za-z0-9_]*)*$/', $ans)) {
+                $fields = $ans;
+            } elseif ($ans !== '') {
+                $this->io->write("<error>搜索字段格式无效（字母/数字/下划线，| 分隔），使用默认 {$defaultFields}</error>");
+            }
+
+            $ans = $this->io->ask(
+                "<question>搜索操作（" . implode('/', self::SEARCH_OPS) . "，默认 {$defaultOp}）:</question> ",
+                $defaultOp
+            );
+            $ans = strtolower(trim((string) $ans));
+            if ($ans === '') {
+                $op = $defaultOp;
+            } elseif (in_array($ans, self::SEARCH_OPS, true)) {
+                $op = $ans;
+            } else {
+                $this->io->write("<error>无效操作 \"{$ans}\"（仅支持 " . implode('/', self::SEARCH_OPS) . "），使用默认 {$defaultOp}</error>");
+            }
+        } else {
+            $this->io->write("<comment>非交互模式：{$className} 使用默认搜索规格 {$fields},{$op}</comment>");
+        }
+
+        return ['ref' => $ref, 'name' => "xq-s-{$fields},{$op}"];
+    }
+
+    /**
+     * 解析搜索规格（可带/不带 xq-s- 前缀）：字段[|字段][,操作] → 规范化 "字段,操作"；无效返回 null
+     */
+    private function parseSearchSpec(string $spec, string $defaultOp): ?string
+    {
+        $spec = trim($spec);
+        if (str_starts_with($spec, 'xq-s-')) {
+            $spec = substr($spec, strlen('xq-s-'));
+        }
+        if (!preg_match('/^([A-Za-z_][A-Za-z0-9_]*(?:\|[A-Za-z_][A-Za-z0-9_]*)*)(?:,([A-Za-z]+))?$/', $spec, $m)) {
+            return null;
+        }
+        $op = isset($m[2]) && $m[2] !== '' ? strtolower($m[2]) : $defaultOp;
+        if (!in_array($op, self::SEARCH_OPS, true)) {
+            return null;
+        }
+        return $m[1] . ',' . $op;
+    }
+
+    /**
+     * 元素类继承链名列表（含自身）：从元素引用文件起，沿 `class X extends Y` 逐级上溯，
+     * 父类文件在当前模块与 base 模块的 form/element/ 中查找，找不到即止（框架基类名也会收入链尾）。
+     */
+    private function elementClassChain(string $ref, string $currentModule): array
+    {
+        $className = substr($ref, 1);
+        $isBase = ($ref[0] ?? '') === '@';
+        $chain = [];
+        for ($i = 0; $i < 6 && $className !== ''; $i++) {
+            $file = $isBase
+                ? $this->findElementInModule('base', $className)
+                : ($this->findElementInModule($currentModule, $className) ?? $this->findElementInModule('base', $className));
+            $chain[] = $className;
+            if ($file === null) {
+                break;
+            }
+            $src = (string) file_get_contents($file);
+            if (!preg_match('/class\s+\w+\s+extends\s+([\\\\\w]+)/i', $src, $m)) {
+                break;
+            }
+            $parent = str_replace('\\', '/', $m[1]);
+            $className = substr($parent, (int) strrpos($parent, '/') + 1);
+            $isBase = false;
+        }
+        return $chain;
     }
 
     /**
@@ -171,6 +318,15 @@ class Form
             return;
         }
         $children = $this->elScanItems($content, $open);
+        $isSearchFormFile = (bool) preg_match('/class\s+\w+\s+extends\s+SearchForm\b/', $content);
+
+        // 元素列表展示标签：数组项压缩为 "@X name='xq-s-…'"
+        $itemLabel = function (string $text): string {
+            if (preg_match("/^\[\s*'([^']+)'\s*,\s*'name'\s*=>\s*'([^']+)'/", $text, $m)) {
+                return $m[1] . " name='{$m[2]}'";
+            }
+            return trim(preg_replace('/\s+/', ' ', $text));
+        };
 
         // 解析插入目标：targetOpen=目标数组的 '[' 下标，targetIndex=插入位置（0=最前），defaultIndent=空数组展开缩进
         $targetOpen = $open;
@@ -196,8 +352,7 @@ class Form
                     $label = $this->elTabLabel($text, $cnt);
                     $topInfo[$idx] = ['tab' => true, 'innerOpen' => $innerOpen, 'label' => $label];
                 } else {
-                    $ref = $this->elRefName($text);
-                    $label = ($ref !== null) ? $ref : $text;
+                    $label = $this->elRefName($text) ?? $itemLabel($text);
                     $topInfo[$idx] = ['tab' => false, 'label' => $label];
                 }
                 $this->io->write('  [' . ($idx + 1) . "] {$label}");
@@ -279,12 +434,16 @@ class Form
             return;
         }
 
-        $newContent = $this->elInsertRef($content, $targetOpen, $targetIndex, $ref, $defaultIndent);
+        // 搜索表单（extends SearchForm）：追加时同样询问/生成 xq-s- 搜索规格
+        $entry = $isSearchFormFile ? $this->buildSearchEntry($ref, null, $currentModule) : $ref;
+
+        $newContent = $this->elInsertRef($content, $targetOpen, $targetIndex, $entry, $defaultIndent);
         if (file_put_contents($formFile, $newContent) === false) {
             $this->io->write("<error>写入表单文件失败: {$formFile}</error>");
             return;
         }
-        $this->io->write("<info>✓ 已将元素 '{$ref}' 添加到表单 {$className}（{$positionDesc}）</info>");
+        $desc = is_array($entry) ? "{$entry['ref']}（name='{$entry['name']}'）" : "'{$ref}'";
+        $this->io->write("<info>✓ 已将元素 {$desc} 添加到表单 {$className}（{$positionDesc}）</info>");
         $this->io->write("  文件: {$formFile}");
     }
 
@@ -488,9 +647,9 @@ class Form
     }
 
     /**
-     * 创建表单文件
+     * 创建表单文件（$isSearchForm=true 时生成继承 SearchForm 的搜索表单）
      */
-    private function createFormFile(string $formPath, string $className, string $configName, array $elementRefs, string $moduleName): void
+    private function createFormFile(string $formPath, string $className, string $configName, array $elementRefs, string $moduleName, bool $isSearchForm = false): void
     {
         $filePath = $formPath . DIRECTORY_SEPARATOR . $className . '.php';
 
@@ -499,10 +658,10 @@ class Form
             return;
         }
 
-        $content = $this->generateFormContent($moduleName, $className, $configName, $elementRefs);
+        $content = $this->generateFormContent($moduleName, $className, $configName, $elementRefs, $isSearchForm);
         file_put_contents($filePath, $content);
 
-        $this->io->write("<info>✓ 表单已创建: $filePath</info>");
+        $this->io->write("<info>✓ " . ($isSearchForm ? '搜索表单' : '表单') . "已创建: $filePath</info>");
     }
 
     /**
@@ -524,25 +683,35 @@ class Form
     }
 
     /**
-     * 生成表单类内容
+     * 生成表单类内容（$isSearchForm=true 时继承 SearchForm）
      */
-    private function generateFormContent(string $moduleName, string $className, string $configName, array $elementRefs): string
+    private function generateFormContent(string $moduleName, string $className, string $configName, array $elementRefs, bool $isSearchForm = false): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\form";
 
-        // 构建元素列表字符串
+        // 构建元素列表字符串（$item 为字符串=纯引用；为 ['ref','name'] 数组=搜索表单数组项）
         $elementsStr = '';
         if (!empty($elementRefs)) {
             $elementsStr = "\n";
-            foreach ($elementRefs as $ref) {
-                $elementsStr .= "        '{$ref}',\n";
+            foreach ($elementRefs as $item) {
+                if (is_array($item)) {
+                    $elementsStr .= "        [\n            '{$item['ref']}',\n            'name' => '{$item['name']}',\n        ],\n";
+                } else {
+                    $elementsStr .= "        '{$item}',\n";
+                }
             }
             $elementsStr .= "    ";
         }
 
-        $useForm = 'xqkeji' . '\\' . 'form' . '\\' . 'Form';
+        $baseClass = $isSearchForm ? 'SearchForm' : 'Form';
+        $useForm = 'xqkeji' . '\\' . 'form' . '\\' . $baseClass;
 
-        return "<?php\nnamespace {$namespace};\n\nuse {$useForm};\n\nclass {$className} extends Form\n{\n    protected \$name = '{$configName}';\n\n    // 表单元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
+        // 搜索表单：与手写范例一致，自带 method=get 与行内排版 attrs
+        $attrsProp = $isSearchForm
+            ? "    protected \$attrs = [\n        'method' => 'get',\n        'class' => 'd-flex flex-wrap justify-content-end gap-2',\n    ];\n\n"
+            : '';
+
+        return "<?php\nnamespace {$namespace};\n\nuse {$useForm};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n\n{$attrsProp}    // 表单元素列表\n    protected \$el = [{$elementsStr}];\n}\n";
     }
 
     /**

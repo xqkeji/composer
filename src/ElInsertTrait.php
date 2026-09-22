@@ -193,24 +193,45 @@ trait ElInsertTrait
      *   - 空数组：展开为 [ \n{defaultIndent}'ref', \n{closeIndent} ]
      *   - $index <= 0：第一个元素之前
      *   - $index >= 1：第 $index 个元素之后（越界按末尾处理）
-     * 返回修改后的完整文件内容。
+     * $ref 为字符串时插入 `'ref',`；为 ['ref'=>..,'name'=>..] 数组时插入多行数组项
+     * （搜索表单元素：[ '@X', 'name' => 'xq-s-…' ],）。返回修改后的完整文件内容。
      */
-    private function elInsertRef(string $content, int $open, int $index, string $ref, string $defaultIndent): string
+    private function elInsertRef(string $content, int $open, int $index, $ref, string $defaultIndent): string
     {
-        $line = "'" . $ref . "',";
+        $renderLine = static function (string $indent) use ($ref): string {
+            if (is_array($ref)) {
+                return "[\n"
+                    . $indent . "    '" . $ref['ref'] . "',\n"
+                    . $indent . "    'name' => '" . $ref['name'] . "',\n"
+                    . $indent . "],";
+            }
+            return "'" . $ref . "',";
+        };
+
         $children = $this->elScanItems($content, $open);
 
         if (empty($children)) {
-            $closeIndent = (substr_count($defaultIndent, ' ') >= 4)
-                ? substr($defaultIndent, 0, -4)
-                : '';
-            $insert = "\n" . $defaultIndent . $line . "\n" . $closeIndent;
+            // '[' 之后到 ']' 之前只可能是纯空白。保留这段空白（文件里 ']' 通常已独占一行带缩进），
+            // 仅在其前填入条目行；若这段空白里没有换行（如 "[ ]" 同行写法），再补一行闭合缩进。
+            $gapEnd = $open + 1;
+            $n = strlen($content);
+            while ($gapEnd < $n && ($content[$gapEnd] === ' ' || $content[$gapEnd] === "\t" || $content[$gapEnd] === "\n" || $content[$gapEnd] === "\r")) {
+                $gapEnd++;
+            }
+            $gap = substr($content, $open + 1, $gapEnd - $open - 1);
+            $insert = "\n" . $defaultIndent . $renderLine($defaultIndent);
+            if (strpbrk($gap, "\r\n") === false) {
+                $closeIndent = (substr_count($defaultIndent, ' ') >= 4)
+                    ? substr($defaultIndent, 0, -4)
+                    : '';
+                $insert .= "\n" . $closeIndent;
+            }
             return substr_replace($content, $insert, $open + 1, 0);
         }
 
         if ($index <= 0) {
             $indent = $this->elLineIndent($content, $children[0]['start']);
-            return substr_replace($content, "\n" . $indent . $line, $open + 1, 0);
+            return substr_replace($content, "\n" . $indent . $renderLine($indent), $open + 1, 0);
         }
 
         if ($index > count($children)) {
@@ -228,6 +249,6 @@ trait ElInsertTrait
         if ($pos < $n && $content[$pos] === ',') {
             $pos++;
         }
-        return substr_replace($content, "\n" . $indent . $line, $pos, 0);
+        return substr_replace($content, "\n" . $indent . $renderLine($indent), $pos, 0);
     }
 }

@@ -383,6 +383,7 @@
 | `--tab` | -b | 可选值 | 是 | Tab配置（可多次使用） |
 | `--global` | -g | 可选值 | 是 | 全局表单元素（在Tab之外） |
 | `--add` | -a | 不需要值 | 否 | 向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类） |
+| `--search` | -s | 不需要值 | 否 | 创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a\|b\|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 ['@X', 'name' => 'xq-s-字段,操作'] 数组项；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥 |
 
 ### 帮助 / 示例
 
@@ -411,6 +412,15 @@
   # 创建Tab表单（中文名称不加引号）
   composer xqkeji:form User -b 基本信息 -e username -e password -b 授权信息 -e auth -e csrf
 
+  # 创建搜索表单（继承 xqkeji\form\SearchForm；有输入的元素交互询问搜索字段与操作）
+  composer xqkeji:form UserSearch -s -e SearchKey,Status,SearchSubmit
+  #   SearchKey → 问字段(默认 search_key，输入 username|fullname)、问操作(默认 like)
+  #   Status → 问字段(默认 status)、问操作(默认 eq)；SearchSubmit → 无输入，直接引用
+
+  # 内联搜索规格免交互（xq-s- 前缀可省略，操作可省默认 like/eq）
+  composer xqkeji:form UserSearch -s -e "SearchKey=username|fullname,like" -e "Status=status,eq" -e SearchSubmit
+  composer xqkeji:form UserSearch -s -e "SearchKey=xq-s-username|fullname,like"
+
   # 向【已存在】的表单交互式追加元素（先列出现有元素，再选插入位置）
   composer xqkeji:form User -a
   composer xqkeji:form User --add
@@ -430,6 +440,11 @@
   - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
+  - 使用 -s/--search 创建搜索表单：生成的类 use xqkeji\form\SearchForm 并 extends SearchForm，自带 $attrs（method=get + d-flex 行内排版，与手写搜索表单一致）；目录、$name 蛇形、@/~ 元素引用、select_ 约定、中文名入 lang、自动切表单模式均与普通表单相同；与同名普通表单会因类文件同名冲突（form/{Class}.php 已存在则报错），建议起名如 {控制器}Search
+  - 搜索表单元素规格：除无输入控件（类名或继承链以 Submit/Reset/Button/Hidden 结尾，如 @SearchSubmit、@SubmitReset，按普通字符串引用）外，每个元素的名字属性都写成 xq-s- 规格：$el 数组项 [ '@元素', 'name' => 'xq-s-字段|字段,操作' ]。字段多选用 | 分隔表示“或”搜索；操作符用词别名（GET 防 URL 污染）：like 模糊、eq =、ne <>、gt >、gte >=、lt <、lte <=、in、nin、regex
+  - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
+  - 向 SearchForm 用 -a 追加元素时同样会询问搜索字段与操作并插入数组项（现有列表中以 "@X name='xq-s-…'" 形式展示）
+  - -s 与 -b/-g 互斥：同时指定会报错退出（基类只能有一个）
   - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
   - Tab中文名称可加引号也可不加引号
   - 使用 -g/--global 添加Tab之外的全局元素
@@ -456,7 +471,7 @@
 | --- | --- | --- | --- | --- |
 | `--element` | -e | 需要值 | 是 | 表格元素列表（可多次使用，或用逗号分隔：id,Username） |
 | `--tree` | -T | 不需要值 | 否 | 创建树形表格（继承 TreegridTable） |
-| `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数） |
+| `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行） |
 | `--no-controller` | -N | 不需要值 | 否 | 仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合 |
 | `--controller-file` | -f | 不需要值 | 否 | 生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件 |
 | `--no-form` | -F | 不需要值 | 否 | 创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单） |
@@ -481,6 +496,9 @@
 
   # 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;）
   composer xqkeji:table User -D -e id,Username,SwitchCheck,LoginTime,EditDelete
+
+  # 给【已存在】的表格补加拖动排序（表格类存在时 -D 不新建，只在类中补写 protected $isDrag = true;）
+  composer xqkeji:table User -D
 
   # 创建表格（创建新元素时交互式输入中文名称）
   composer xqkeji:table User -e id,username,switch_check,login_time,edit_delete
@@ -522,6 +540,7 @@
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
   - 使用 -D/--drag 创建可拖动排序的普通表格：仍继承 Table，仅在表格类中额外生成 protected \$isDrag = true;
+  - 表格类【已存在】时执行 -D 不会新建表格，而是直接为已有表格类补写拖动参数（幂等）：无 \$isDrag 则在 \$el 属性前插入 protected \$isDrag = true;；\$isDrag = false 则改为 true；已是 true 则跳过。可只传表名 + -D 单独执行，不需要 -e；树状表格（TreegridTable）自带拖拽，执行 -D 会提示并跳过
   - -D 与 -T 互斥：树形表格自带拖拽排序，指定 -T 时忽略 -D
   - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）
   - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
@@ -632,8 +651,7 @@
 | 选项 | 短名 | 取值 | 数组 | 说明 |
 | --- | --- | --- | --- | --- |
 | `--copy` | - | 不需要值 | 否 | 使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境 |
-| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update/require |
-| `--require` | - | 不需要值 | 否 | 强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包） |
+| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update |
 | `--no-alias` | - | 不需要值 | 否 | 不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束） |
 
 ### 帮助 / 示例
@@ -652,14 +670,8 @@
   # 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）
   composer xqkeji:path xqkeji/composer ../composer --copy
 
-  # 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）
+  # 仅修改 composer.json，不自动更新（之后手动运行 composer update 包名）
   composer xqkeji:path xqkeji/composer ../composer --no-update
-
-  # 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）
-  composer xqkeji:path xqkeji/xq-app-content ../xq-app-content
-
-  # 强制走 composer require（即便包已存在也重新按 require 流程处理）
-  composer xqkeji:path xqkeji/composer ../composer --require
 
 说明：
 
@@ -668,8 +680,7 @@
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
-  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
-  - 默认自动运行上述 update/require；--no-update 可跳过
+  - 默认自动运行 composer update 包名；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
   - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）

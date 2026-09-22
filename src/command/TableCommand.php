@@ -19,7 +19,7 @@ class TableCommand extends BaseCommand
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
             ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）')
             ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
-            ->addOption('drag', 'D', InputOption::VALUE_NONE, '创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）')
+            ->addOption('drag', 'D', InputOption::VALUE_NONE, '创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行）')
             ->addOption('no-controller', 'N', InputOption::VALUE_NONE, '仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合')
             ->addOption('controller-file', 'f', InputOption::VALUE_NONE, '生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件')
             ->addOption('no-form', 'F', InputOption::VALUE_NONE, '创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单）')
@@ -41,6 +41,9 @@ class TableCommand extends BaseCommand
 
   <comment># 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;）</comment>
   composer xqkeji:table User -D -e id,Username,SwitchCheck,LoginTime,EditDelete
+
+  <comment># 给【已存在】的表格补加拖动排序（表格类存在时 -D 不新建，只在类中补写 protected $isDrag = true;）</comment>
+  composer xqkeji:table User -D
 
   <comment># 创建表格（创建新元素时交互式输入中文名称）</comment>
   composer xqkeji:table User -e id,username,switch_check,login_time,edit_delete
@@ -82,6 +85,7 @@ class TableCommand extends BaseCommand
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
   - 使用 -D/--drag 创建可拖动排序的普通表格：仍继承 Table，仅在表格类中额外生成 protected \$isDrag = true;
+  - 表格类【已存在】时执行 -D 不会新建表格，而是直接为已有表格类补写拖动参数（幂等）：无 \$isDrag 则在 \$el 属性前插入 protected \$isDrag = true;；\$isDrag = false 则改为 true；已是 true 则跳过。可只传表名 + -D 单独执行，不需要 -e；树状表格（TreegridTable）自带拖拽，执行 -D 会提示并跳过
   - -D 与 -T 互斥：树形表格自带拖拽排序，指定 -T 时忽略 -D
   - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）
   - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
@@ -114,8 +118,8 @@ EOF
         }
         
         // 交互式向已有表格追加列元素（-a/--add）：不创建新表格，直接进入插入流程
+        $table = new Table($this->getIO(), $this->requireComposer());
         if ($input->getOption('add')) {
-            $table = new Table($this->getIO(), $this->requireComposer());
             $table->addElementToTable($name, $input, $output);
             return 0;
         }
@@ -123,11 +127,16 @@ EOF
         $elements = $this->flattenElements($input->getOption('element'));
         $isTree = $input->getOption('tree');
         $isDrag = $input->getOption('drag');
+
+        // -D 且表格类已存在：不新建表格，只为已有表格类补写 protected $isDrag = true;（幂等）
+        if ($isDrag && !$isTree && $table->enableDrag($name)) {
+            return 0;
+        }
+
         $withController = !$input->getOption('no-controller');
         $withForm = !$input->getOption('no-form');
         $controllerFile = $input->getOption('controller-file');
 
-        $table = new Table($this->getIO(), $this->requireComposer());
         $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag, $withForm, $controllerFile);
         
         return 0;

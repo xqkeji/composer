@@ -379,11 +379,11 @@
 
 | 选项 | 短名 | 取值 | 数组 | 说明 |
 | --- | --- | --- | --- | --- |
-| `--element` | -e | 需要值 | 是 | 表单元素列表（可多次使用，或用逗号分隔：Username,Password） |
+| `--element` | -e | 可选值 | 是 | 表单元素列表（可多次使用，或用逗号分隔：Username,Password）；只传 -e 不带任何元素值时进入交互循环逐个添加 |
 | `--tab` | -b | 可选值 | 是 | Tab配置（可多次使用） |
 | `--global` | -g | 可选值 | 是 | 全局表单元素（在Tab之外） |
 | `--add` | -a | 不需要值 | 否 | 向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类） |
-| `--search` | -s | 不需要值 | 否 | 创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a\|b\|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 ['@X', 'name' => 'xq-s-字段,操作'] 数组项；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥 |
+| `--search` | -s | 不需要值 | 否 | 创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a\|b\|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 ['@X', 'name' => 'xq-s-字段,操作'] 数组项；输入元素统一套 '@search' 模板（新建元素类写 $template 属性，复用元素在数组项内联 template）；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥 |
 
 ### 帮助 / 示例
 
@@ -398,6 +398,9 @@
   # 创建普通表单（带元素列表）
   composer xqkeji:form User -e Username -e Password -e Email
   composer xqkeji:form User -e Username,Password,Email
+
+  # 只传 -e 不带元素值：进入交互循环逐个添加元素（每次问名称，加入后问是否继续；结束自动处理末尾 @SubmitReset）
+  composer xqkeji:form User -e
 
   # 元素为 select 类型：蛇形或驼峰写法均可（如 select_dept 或 SelectDept），自动生成 SelectModel 空子类、不询问中文名
   composer xqkeji:form Article -e title,select_dept,select_status
@@ -438,11 +441,14 @@
   - select 元素（如 select_dept / SelectDept）：自动在当前模块 form/element/ 下创建继承 xqkeji\form\element\SelectModel 的空元素类，类名转大驼峰（select_dept → SelectDept），类体为空、由 SelectModel 提供行为，且不询问中文名；表单中以 ~SelectDept 引用
   - 若同名元素已存在于 base 或当前模块，则直接按 @SelectDept / ~SelectDept 引用，不再重复创建
   - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
+  - 只传 -e 不带任何元素值（如 composer xqkeji:form User -e）：进入交互式循环添加模式，每次询问一个元素名称（留空结束），加入后询问是否继续添加下一个；循环结束后按下方规则处理末尾 @SubmitReset；--no-interaction 时报错退出；Tab 表单（-b/-g）不支持该模式
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
+  - 带了 -e 时末尾自动补提交按钮：元素先统一解析为 @/~ 引用，若最后一个元素名不含 submit（不区分大小写），交互式询问是否自动追加 @SubmitReset 作为最后一个元素（默认追加）；--no-interaction 时直接追加并提示；-b/-g 的 Tab 表单不做此检查（结构不同），搜索表单 -s 同样适用（末元素如 @SearchSubmit 已含 submit 则不询问）
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
   - 使用 -s/--search 创建搜索表单：生成的类 use xqkeji\form\SearchForm 并 extends SearchForm，自带 $attrs（method=get + d-flex 行内排版，与手写搜索表单一致）；目录、$name 蛇形、@/~ 元素引用、select_ 约定、中文名入 lang、自动切表单模式均与普通表单相同；与同名普通表单会因类文件同名冲突（form/{Class}.php 已存在则报错），建议起名如 {控制器}Search
   - 搜索表单元素规格：除无输入控件（类名或继承链以 Submit/Reset/Button/Hidden 结尾，如 @SearchSubmit、@SubmitReset，按普通字符串引用）外，每个元素的名字属性都写成 xq-s- 规格：$el 数组项 [ '@元素', 'name' => 'xq-s-字段|字段,操作' ]。字段多选用 | 分隔表示“或”搜索；操作符用词别名（GET 防 URL 污染）：like 模糊、eq =、ne <>、gt >、gte >=、lt <、lte <=、in、nin、regex
   - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
+  - 搜索表单元素统一使用 '@search' 模板（小写，与 base 模块 SearchKey 一致）：建 -s 表单时【新建】的元素类（含 select_ 子类）直接在类体内写 protected \$template = '@search';（$el 引用保持干净）；【复用】的既有元素（@X 或已有 ~X，及 -a 向搜索表单追加的元素）不改其类文件，在 $el 数组项内联 'template' => '@search'；元素继承链中已声明 '@search' 时两者都不再重复添加
   - 向 SearchForm 用 -a 追加元素时同样会询问搜索字段与操作并插入数组项（现有列表中以 "@X name='xq-s-…'" 形式展示）
   - -s 与 -b/-g 互斥：同时指定会报错退出（基类只能有一个）
   - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
@@ -469,7 +475,7 @@
 
 | 选项 | 短名 | 取值 | 数组 | 说明 |
 | --- | --- | --- | --- | --- |
-| `--element` | -e | 需要值 | 是 | 表格元素列表（可多次使用，或用逗号分隔：id,Username） |
+| `--element` | -e | 可选值 | 是 | 表格元素列表（可多次使用，或用逗号分隔：id,Username）；只传 -e 不带任何元素值时进入交互循环逐个添加 |
 | `--tree` | -T | 不需要值 | 否 | 创建树形表格（继承 TreegridTable） |
 | `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行） |
 | `--no-controller` | -N | 不需要值 | 否 | 仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合 |
@@ -490,6 +496,9 @@
   # 创建普通表格（带元素列表）
   composer xqkeji:table User -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
   composer xqkeji:table User -e id,Username,SwitchCheck,LoginTime,EditDelete
+
+  # 只传 -e 不带元素值：进入交互循环逐个添加列（结束后自动补首列 Id，并询问末尾 @EditDelete）
+  composer xqkeji:table User -e
 
   # 创建树形表格（继承 TreegridTable）
   composer xqkeji:table User -T -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
@@ -532,7 +541,9 @@
   - 表格名支持大小写，自动转为大驼峰（如 user → User、user_list → UserList）
   - 表格元素名支持小写加下划线或大驼峰，命令行时可以用小写加_或-的格式，自动转为大驼峰
   - 表格元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e id,Username），创建树表时忽略该参数改用内置默认元素
+  - 只传 -e 不带任何元素值（如 composer xqkeji:table User -e）：进入交互式循环添加模式，每次询问一个列名称（留空结束），加入后询问是否继续添加下一个；循环结束后执行首尾规范化（首列自动置为 Id，末列不含 delete 时询问追加 @EditDelete）；--no-interaction 时报错退出；树表 -T 不支持该模式
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Login Time"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
+  - 带了 -e 时首尾列自动规范化（元素先统一解析为 @/~ 引用再判断）：【首列】必须是主键 Id——列表已含 Id 但不在首位则自动移到首位，完全不含则自动按 xqkeji:element 流程创建/复用 Id 并插到首位（无需询问）；【末列】最后一个元素名不含 delete 时，交互式询问是否自动追加操作列 @EditDelete（默认追加；非交互模式直接追加并提示）。树表 -T 用内置默认元素（首 @Id 尾 ~EditDelete{表}），不受此逻辑影响
   - 表格类创建在当前模块的 table/ 目录下
   - 表格元素创建在当前模块的 table/element/ 目录下
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
@@ -651,7 +662,8 @@
 | 选项 | 短名 | 取值 | 数组 | 说明 |
 | --- | --- | --- | --- | --- |
 | `--copy` | - | 不需要值 | 否 | 使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境 |
-| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update |
+| `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update/require |
+| `--require` | - | 不需要值 | 否 | 强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包） |
 | `--no-alias` | - | 不需要值 | 否 | 不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束） |
 
 ### 帮助 / 示例
@@ -670,8 +682,14 @@
   # 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）
   composer xqkeji:path xqkeji/composer ../composer --copy
 
-  # 仅修改 composer.json，不自动更新（之后手动运行 composer update 包名）
+  # 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）
   composer xqkeji:path xqkeji/composer ../composer --no-update
+
+  # 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）
+  composer xqkeji:path xqkeji/xq-app-content ../xq-app-content
+
+  # 强制走 composer require（即便包已存在也重新按 require 流程处理）
+  composer xqkeji:path xqkeji/composer ../composer --require
 
 说明：
 
@@ -680,7 +698,8 @@
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
-  - 默认自动运行 composer update 包名；--no-update 可跳过
+  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
+  - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
   - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）

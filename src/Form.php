@@ -117,11 +117,33 @@ class Form
                     if ($element === '') {
                         continue;
                     }
-                    $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output);
+                    $freshClass = false;
+                    $elementRef = $this->processElement($modulePath, $element, $currentModule, $input, $output, $isSearchForm, $freshClass);
                     if ($elementRef !== null) {
                         $elementRefs[] = $isSearchForm
-                            ? $this->buildSearchEntry($elementRef, $inlineSpec, $currentModule)
+                            ? $this->buildSearchEntry($elementRef, $inlineSpec, $currentModule, $freshClass)
                             : $elementRef;
+                    }
+                }
+            }
+
+            // 带了 -e：元素统一规范化后，若最后一个元素名不含 submit，询问是否自动追加 @SubmitReset
+            if (!empty($elements) && !empty($elementRefs)) {
+                $last = $elementRefs[count($elementRefs) - 1];
+                $lastName = ltrim((is_array($last) ? $last['ref'] : $last), '@~');
+                if (stripos($lastName, 'submit') === false) {
+                    $add = true;
+                    if ($this->io->isInteractive()) {
+                        $add = $this->io->confirm(
+                            "<question>最后一个元素 '{$lastName}' 不含 submit，是否自动追加提交/重置按钮 @SubmitReset 作为最后一个元素？</question>",
+                            true
+                        );
+                    } else {
+                        $this->io->write('<comment>非交互模式：最后一个元素不含 submit，默认自动追加 @SubmitReset（不想要请在 -e 末尾自带提交类元素）</comment>');
+                    }
+                    if ($add) {
+                        $elementRefs[] = '@SubmitReset';
+                        $this->io->write('<info>✓ 已在表单末尾追加 @SubmitReset</info>');
                     }
                 }
             }
@@ -160,35 +182,64 @@ class Form
     private const SEARCH_TEXTISH = '/^(text|textarea|searchkey)$/i';
 
     /**
+     * 搜索表单元素统一使用的模板名（与 base SearchKey 一致，小写）
+     */
+    private const SEARCH_TEMPLATE = '@search';
+
+    /**
      * 为搜索表单元素构建 $el 条目：
      *   - 无输入控件（Submit/Reset/Button/Hidden，含继承链）→ 返回纯引用字符串
      *   - 其余 → 返回 ['ref' => '@X', 'name' => 'xq-s-字段|字段,操作'] 数组条目
      * 规格来源优先级：内联（-e "元素=字段,op"）> 交互两问（字段 / 操作符）> 默认值（字段=元素名蛇形，op 文本类 like 其余 eq）。
+     * 模板规则：搜索表单元素统一使用 '@search' 模板——本次新建的元素类已在类体内写入
+     * protected \$template = '@search'（$freshClass=true），或元素继承链中已有该声明时，$el 不再内联；
+     * 否则在数组条目内联 'template' => '@search'（不改动被复用的既有类文件）。
      */
-    private function buildSearchEntry(string $ref, ?string $inlineSpec, string $currentModule)
+    private function buildSearchEntry(string $ref, ?string $inlineSpec, string $currentModule, bool $freshClass = false)
     {
         $className = substr($ref, 1);
         $chain = $this->elementClassChain($ref, $currentModule);
-        foreach ($chain as $name) {
-            if (preg_match(self::SEARCH_NON_INPUT, $name)) {
+        foreach ($chain as $link) {
+            if (preg_match(self::SEARCH_NON_INPUT, $link['name'])) {
                 return $ref;
+            }
+        }
+
+        // 是否需要内联 template：新建类已带属性；继承链任一文件已声明 '@search' 也无需重复
+        $needInlineTemplate = !$freshClass;
+        if ($needInlineTemplate) {
+            foreach ($chain as $link) {
+                if ($link['file'] !== null
+                    && preg_match("/protected\s+\\\$template\s*=\s*'@search'/", (string) @file_get_contents($link['file']))) {
+                    $needInlineTemplate = false;
+                    break;
+                }
             }
         }
 
         $defaultFields = $this->toSnakeCase($className);
         $textish = false;
-        foreach ($chain as $name) {
-            if (preg_match(self::SEARCH_TEXTISH, $name)) {
+        foreach ($chain as $link) {
+            if (preg_match(self::SEARCH_TEXTISH, $link['name'])) {
                 $textish = true;
                 break;
             }
         }
         $defaultOp = $textish ? 'like' : 'eq';
 
+        $finish = function (string $fields, string $op) use ($ref, $needInlineTemplate) {
+            $entry = ['ref' => $ref, 'name' => "xq-s-{$fields},{$op}"];
+            if ($needInlineTemplate) {
+                $entry['template'] = '@search';
+            }
+            return $entry;
+        };
+
         if ($inlineSpec !== null && $inlineSpec !== '') {
             $parsed = $this->parseSearchSpec($inlineSpec, $defaultOp);
             if ($parsed !== null) {
-                return ['ref' => $ref, 'name' => 'xq-s-' . $parsed];
+                $pos = strrpos($parsed, ',');
+                return $finish(substr($parsed, 0, $pos), substr($parsed, $pos + 1));
             }
             $this->io->write("<error>内联搜索规格无效：\"{$inlineSpec}\"（格式 字段[|字段][,操作]，操作 ∈ " . implode('/', self::SEARCH_OPS) . "），改为交互/默认</error>");
         }
@@ -224,7 +275,7 @@ class Form
             $this->io->write("<comment>非交互模式：{$className} 使用默认搜索规格 {$fields},{$op}</comment>");
         }
 
-        return ['ref' => $ref, 'name' => "xq-s-{$fields},{$op}"];
+        return $finish($fields, $op);
     }
 
     /**
@@ -247,8 +298,9 @@ class Form
     }
 
     /**
-     * 元素类继承链名列表（含自身）：从元素引用文件起，沿 `class X extends Y` 逐级上溯，
-     * 父类文件在当前模块与 base 模块的 form/element/ 中查找，找不到即止（框架基类名也会收入链尾）。
+     * 元素类继承链：每项 ['name' => 类名, 'file' => ?string 源文件]。
+     * 从元素引用文件起，沿 `class X extends Y` 逐级上溯，父类文件在当前模块与 base 模块的
+     * form/element/ 中查找，找不到即止（框架基类名收入链尾、file 为 null）。
      */
     private function elementClassChain(string $ref, string $currentModule): array
     {
@@ -259,7 +311,7 @@ class Form
             $file = $isBase
                 ? $this->findElementInModule('base', $className)
                 : ($this->findElementInModule($currentModule, $className) ?? $this->findElementInModule('base', $className));
-            $chain[] = $className;
+            $chain[] = ['name' => $className, 'file' => $file];
             if ($file === null) {
                 break;
             }
@@ -442,7 +494,9 @@ class Form
             $this->io->write("<error>写入表单文件失败: {$formFile}</error>");
             return;
         }
-        $desc = is_array($entry) ? "{$entry['ref']}（name='{$entry['name']}'）" : "'{$ref}'";
+        $desc = is_array($entry)
+            ? "{$entry['ref']}（name='{$entry['name']}" . (isset($entry['template']) ? "', template='{$entry['template']}" : '') . "'）"
+            : "'{$ref}'";
         $this->io->write("<info>✓ 已将元素 {$desc} 添加到表单 {$className}（{$positionDesc}）</info>");
         $this->io->write("  文件: {$formFile}");
     }
@@ -500,8 +554,11 @@ class Form
 
     /**
      * 处理表单元素（查找或创建）
+     *
+     * $isSearch=true 时新建的元素类模板写 '@search'（搜索表单）；
+     * $freshClass 出参：true=本次新建了元素类文件，false=复用已有（搜索表单据此决定是否内联 template）。
      */
-    private function processElement(string $modulePath, string $elementName, string $currentModule, $input = null, $output = null): ?string
+    private function processElement(string $modulePath, string $elementName, string $currentModule, $input = null, $output = null, bool $isSearch = false, ?bool &$freshClass = null): ?string
     {
         // 转换为大驼峰类名
         $className = $this->toCamelCase($elementName);
@@ -512,6 +569,7 @@ class Form
         $baseElementPath = $this->findElementInModule('base', $className);
         if ($baseElementPath !== null) {
             $this->io->write("<info>✓ 在 base 模块找到元素: $className</info>");
+            $freshClass = false;
             return '@' . $className;
         }
 
@@ -519,6 +577,7 @@ class Form
         $currentElementPath = $this->findElementInModule($currentModule, $className);
         if ($currentElementPath !== null) {
             $this->io->write("<info>✓ 在当前模块找到元素: $className</info>");
+            $freshClass = false;
             return '~' . $className;
         }
 
@@ -531,8 +590,9 @@ class Form
         // select_ 开头的元素（蛇形 select_dept 或驼峰 SelectDept 均可，先统一转蛇形再判前缀）：
         // 生成 SelectModel 的空子类（仅继承、类体为空，不写属性、不询问中文名），如 → 类 SelectDept
         if (strpos($configName, 'select_') === 0) {
-            $this->createElementFile($elementPath, $className, $configName, '', true);
+            $wrote = $this->createElementFile($elementPath, $className, $configName, '', true, $isSearch);
             $this->io->write("<info>✓ 已创建表单元素（SelectModel 子类）: $className</info>");
+            $freshClass = $wrote;
             return '~' . $className;
         }
 
@@ -551,8 +611,9 @@ class Form
             $elementText = $className;
         }
 
-        $this->createElementFile($elementPath, $className, $configName, $elementText);
+        $wrote = $this->createElementFile($elementPath, $className, $configName, $elementText, false, $isSearch);
         $this->io->write("<info>✓ 已创建表单元素: $className</info>");
+        $freshClass = $wrote;
         return '~' . $className;
     }
 
@@ -610,20 +671,21 @@ class Form
     }
 
     /**
-     * 创建表单元素文件
+     * 创建表单元素文件；返回是否实际写入（false=文件已存在，仅提示）
      */
-    private function createElementFile(string $elementPath, string $className, string $configName, string $elementText, bool $isSelect = false): void
+    private function createElementFile(string $elementPath, string $className, string $configName, string $elementText, bool $isSelect = false, bool $isSearch = false): bool
     {
         $filePath = $elementPath . DIRECTORY_SEPARATOR . $className . '.php';
 
         if (is_file($filePath)) {
             $this->io->write("<comment>⚠ 表单元素已存在: $filePath</comment>");
-            return;
+            return false;
         }
 
         $currentModule = $this->context->getCurrentModule();
-        $content = $this->generateElementContent($currentModule, $className, $configName, $elementText, $isSelect);
+        $content = $this->generateElementContent($currentModule, $className, $configName, $elementText, $isSelect, $isSearch);
         file_put_contents($filePath, $content);
+        return true;
     }
 
     /**
@@ -631,19 +693,23 @@ class Form
      *
      * 默认生成继承 Text 的完整元素类；$isSelect 为 true 时生成继承 SelectModel 的空类
      * （select_ 开头元素的约定：类体为空，直接继承，由 SelectModel 提供行为）。
+     * $isSearch 为 true（搜索表单新建的元素类）时模板用 '@search'：Text 类的 $template 改写，
+     * SelectModel 空子类则补写该属性。
      */
-    private function generateElementContent(string $moduleName, string $className, string $configName, string $elementText, bool $isSelect = false): string
+    private function generateElementContent(string $moduleName, string $className, string $configName, string $elementText, bool $isSelect = false, bool $isSearch = false): string
     {
         $namespace = "xqkeji\\app\\{$moduleName}\\form\\element";
 
         if ($isSelect) {
             $useSelectModel = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'SelectModel';
-            return "<?php\nnamespace {$namespace};\n\nuse {$useSelectModel};\n\nclass {$className} extends SelectModel\n{\n}\n";
+            $body = $isSearch ? "    protected \$template = '@search';\n" : '';
+            return "<?php\nnamespace {$namespace};\n\nuse {$useSelectModel};\n\nclass {$className} extends SelectModel\n{\n{$body}}\n";
         }
 
         $useText = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'Text';
+        $template = $isSearch ? '@search' : '@row';
 
-        return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '@row';\n}\n";
+        return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '{$template}';\n}\n";
     }
 
     /**
@@ -695,7 +761,11 @@ class Form
             $elementsStr = "\n";
             foreach ($elementRefs as $item) {
                 if (is_array($item)) {
-                    $elementsStr .= "        [\n            '{$item['ref']}',\n            'name' => '{$item['name']}',\n        ],\n";
+                    $elementsStr .= "        [\n            '{$item['ref']}',\n            'name' => '{$item['name']}',";
+                    if (isset($item['template'])) {
+                        $elementsStr .= "\n            'template' => '{$item['template']}',";
+                    }
+                    $elementsStr .= "\n        ],\n";
                 } else {
                     $elementsStr .= "        '{$item}',\n";
                 }

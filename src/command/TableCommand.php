@@ -11,13 +11,14 @@ use xqkeji\composer\Table;
 class TableCommand extends BaseCommand
 {
     use NormalizesShortOptions;
+    use ElementLoopTrait;
 
     protected function configure()
     {
         $this->setName('xqkeji:table')
             ->setDescription('创建表格类')
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
-            ->addOption('element', 'e', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）')
+            ->addOption('element', 'e', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '表格元素列表（可多次使用，或用逗号分隔：id,Username）；只传 -e 不带任何元素值时进入交互循环逐个添加')
             ->addOption('tree', 'T', InputOption::VALUE_NONE, '创建树形表格（继承 TreegridTable）')
             ->addOption('drag', 'D', InputOption::VALUE_NONE, '创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行）')
             ->addOption('no-controller', 'N', InputOption::VALUE_NONE, '仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合')
@@ -35,6 +36,9 @@ class TableCommand extends BaseCommand
   <comment># 创建普通表格（带元素列表）</comment>
   composer xqkeji:table User -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
   composer xqkeji:table User -e id,Username,SwitchCheck,LoginTime,EditDelete
+
+  <comment># 只传 -e 不带元素值：进入交互循环逐个添加列（结束后自动补首列 Id，并询问末尾 @EditDelete）</comment>
+  composer xqkeji:table User -e
 
   <comment># 创建树形表格（继承 TreegridTable）</comment>
   composer xqkeji:table User -T -e id -e Username -e SwitchCheck -e LoginTime -e EditDelete
@@ -77,7 +81,9 @@ class TableCommand extends BaseCommand
   - 表格名支持大小写，自动转为大驼峰（如 user → User、user_list → UserList）
   - 表格元素名支持小写加下划线或大驼峰，命令行时可以用小写加_或-的格式，自动转为大驼峰
   - 表格元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e id,Username），创建树表时忽略该参数改用内置默认元素
+  - 只传 -e 不带任何元素值（如 composer xqkeji:table User -e）：进入交互式循环添加模式，每次询问一个列名称（留空结束），加入后询问是否继续添加下一个；循环结束后执行首尾规范化（首列自动置为 Id，末列不含 delete 时询问追加 @EditDelete）；--no-interaction 时报错退出；树表 -T 不支持该模式
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Login Time"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
+  - 带了 -e 时首尾列自动规范化（元素先统一解析为 @/~ 引用再判断）：【首列】必须是主键 Id——列表已含 Id 但不在首位则自动移到首位，完全不含则自动按 xqkeji:element 流程创建/复用 Id 并插到首位（无需询问）；【末列】最后一个元素名不含 delete 时，交互式询问是否自动追加操作列 @EditDelete（默认追加；非交互模式直接追加并提示）。树表 -T 用内置默认元素（首 @Id 尾 ~EditDelete{表}），不受此逻辑影响
   - 表格类创建在当前模块的 table/ 目录下
   - 表格元素创建在当前模块的 table/element/ 目录下
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
@@ -127,6 +133,11 @@ EOF
         $elements = $this->flattenElements($input->getOption('element'));
         $isTree = $input->getOption('tree');
         $isDrag = $input->getOption('drag');
+
+        // -e 传了但没给出任何元素值（如 composer xqkeji:table User -e）：进入交互循环逐个添加列（树表忽略）
+        if (!$isTree && empty($elements) && $input->hasParameterOption(['-e', '--element'], true)) {
+            $elements = $this->collectElementsLoop($this->getIO(), '列元素');
+        }
 
         // -D 且表格类已存在：不新建表格，只为已有表格类补写 protected $isDrag = true;（幂等）
         if ($isDrag && !$isTree && $table->enableDrag($name)) {

@@ -114,6 +114,48 @@ class Table
                     }
                 }
             }
+
+            // 带了 -e：统一规范化首尾列——首列必须为主键 Id（已含则前移，不含则自动补充），
+            // 最后列名不含 delete 时询问是否自动追加操作列 @EditDelete
+            if (!empty($elements) && !empty($elementRefs)) {
+                $idIndex = null;
+                foreach ($elementRefs as $i => $r) {
+                    if (strcasecmp(ltrim($r, '@~'), 'Id') === 0) {
+                        $idIndex = $i;
+                        break;
+                    }
+                }
+                if ($idIndex === null) {
+                    $idRef = $this->processElement($modulePath, 'id', $currentModule, $input, $output, $withController);
+                    if ($idRef !== null) {
+                        array_unshift($elementRefs, $idRef);
+                        $this->io->write("<info>✓ 表格首列需为主键，已自动在首位添加 '{$idRef}'</info>");
+                    }
+                } elseif ($idIndex > 0) {
+                    $idRef = $elementRefs[$idIndex];
+                    array_splice($elementRefs, $idIndex, 1);
+                    array_unshift($elementRefs, $idRef);
+                    $this->io->write("<info>✓ 表格首列需为主键，已将 '{$idRef}' 移动到首位</info>");
+                }
+
+                $lastRef = $elementRefs[count($elementRefs) - 1];
+                $lastName = ltrim($lastRef, '@~');
+                if (stripos($lastName, 'delete') === false) {
+                    $add = true;
+                    if ($this->io->isInteractive()) {
+                        $add = $this->io->confirm(
+                            "<question>最后一列 '{$lastName}' 不含 delete，是否自动追加操作列 @EditDelete 作为最后一个元素？</question>",
+                            true
+                        );
+                    } else {
+                        $this->io->write('<comment>非交互模式：最后一列不含 delete，默认自动追加 @EditDelete（不想要请在 -e 末尾自带删除类列）</comment>');
+                    }
+                    if ($add) {
+                        $elementRefs[] = '@EditDelete';
+                        $this->io->write('<info>✓ 已在表格末尾追加 @EditDelete</info>');
+                    }
+                }
+            }
             // 普通表格中文名：默认走统一优先级（设置 > 读取 lang > 交互提示），作为控制器显示名；
             // 仅创建表格模式（-N）下只读取已有 lang、不回写，避免改动 zh_cn.php
             $tableCnLangKey = "{$currentModule} module " . $this->toSnakeCase($tableName);

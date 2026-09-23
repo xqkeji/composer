@@ -60,8 +60,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:use {name} [-m|-c|-f|-T]` — 切换当前模块/控制器，或设置 form/table 模式。
 - `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类。
 - `xqkeji:model {name}` — 创建模型类。
-- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）。
+- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加 `@SubmitReset`；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
@@ -80,6 +80,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 `xqkeji:form {name} -s` 生成继承 `xqkeji\form\SearchForm` 的搜索表单（GET 提交，生成类自带 `$attrs = ['method'=>'get','class'=>'d-flex …']`），与 `-b/-g` 互斥。搜索表单的输入元素必须声明搜索目标：
 
 - `$el` 条目写成数组项：`[ '@SearchKey', 'name' => 'xq-s-username|fullname,like' ]`；`xq-s-` 前缀固定，`|` 表示多字段“或”搜索，`,op` 为搜索操作。无输入控件（类名链尾含 submit/reset/button/hidden）仍写纯字符串引用。
+- **`@search` 模板**：搜索表单的输入元素统一用模板 `@search`（小写）。建 `-s` 表单时**新建**的元素类（含 select_ 子类）类体内写 `protected $template = '@search';`；**复用**的既有元素（`@X`/已有 `~X`，及 `-a` 追加）不改类文件，在 `$el` 数组项内联 `'template' => '@search'`；继承链已声明 `@search`（如 base SearchKey）则两者都省略。
 - **操作符用词别名**（符号 `= < >` 等会污染 GET URL）：`eq`(=) `ne`(<>) `gt`(>) `gte`(>=) `lt`(<) `lte`(<=) `in` `nin` `regex` `like`。
 - 规格来源优先级：**内联** `-e "元素=字段|字段,op"`（免询问）> **交互两问**（字段默认=元素名蛇形；操作默认：文本类元素 Text/Textarea/SearchKey 为 `like`，其余 `eq`）> **非交互默认值**（打印提示，等价直接回车）。内联规格可省略 `,op`、可带 `xq-s-` 前缀；非法则报错回退交互/默认。
 - 实现：`Form::buildSearchEntry`（判定+询问）、`Form::parseSearchSpec`（内联解析）、`Form::elementClassChain`（沿 `class X extends Y` 上溯判定），`ElInsertTrait::elInsertRef` 支持数组项多行插入。

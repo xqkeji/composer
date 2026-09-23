@@ -200,10 +200,13 @@ trait ElInsertTrait
     {
         $renderLine = static function (string $indent) use ($ref): string {
             if (is_array($ref)) {
-                return "[\n"
+                $line = "[\n"
                     . $indent . "    '" . $ref['ref'] . "',\n"
-                    . $indent . "    'name' => '" . $ref['name'] . "',\n"
-                    . $indent . "],";
+                    . $indent . "    'name' => '" . $ref['name'] . "'";
+                if (isset($ref['template'])) {
+                    $line .= ",\n" . $indent . "    'template' => '" . $ref['template'] . "'";
+                }
+                return $line . ",\n" . $indent . "],";
             }
             return "'" . $ref . "',";
         };

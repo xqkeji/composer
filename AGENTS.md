@@ -46,7 +46,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:model` | `model/{Class}.php` |
 | `xqkeji:action` | 控制器动作类；动作名写入语言文件 |
 | `xqkeji:form` | `form/{Class}.php`（继承 `Form`、`TabForm`（`-b`）或 `SearchForm`（`-s` 搜索表单，输入类元素带 `xq-s-字段,操作` 搜索规格、与 `-b/-g` 互斥））+ 所需 `form/element/{El}.php`；表单中文名入 lang |
-| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
+| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外；`-D`+ordernum 列时例外：复制 `src/example/src/controller/order/Admin.php` 模板落地 `controller/{表名蛇形}/Admin.php`，`$order=['ordernum'=>'asc']`，动作集加 `b_order`）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
 | `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地 |
@@ -58,10 +58,10 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:module {name} [-p 路径] [-t 中文名]` — 创建/注册模块。
 - `xqkeji:controller {name} [-e 入口] [-a auth|login] [-A 动作列表] [-t 中文名] [-f]` — 创建控制器 + 初始化 acl/menu/lang。
 - `xqkeji:use {name} [-m|-c|-f|-T]` — 切换当前模块/控制器，或设置 form/table 模式。
-- `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类。
+- `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类；`Admin` 动作交互式询问默认排序 `$order`（逐个输入字段 + asc/desc，可多组）与默认查询条件 `$conditions`（逐个输入字段/操作符(= <> > >= < <= like regex，默认 =)/值，可多组；纯数字按数字、其余按字符串），有设置才写入对应 `protected $order = [...]` / `protected $conditions = [['字段', '操作符', 值], ...]` 属性，留空/非交互不写。
 - `xqkeji:model {name}` — 创建模型类。
 - `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加 `@SubmitReset`；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。

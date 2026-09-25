@@ -78,6 +78,8 @@ class Table
         $elementRefs = [];
         // 表格中文名（两分支共用：树表经 resolveTreeTableCn 交互解析；普通表经 Lang::resolve 解析，作为控制器显示名）
         $tableCn = '';
+        // -D 且列中存在 ordernum 序号列（用户自带或自动补充）：控制器动作集需追加 b_order
+        $dragWithOrder = false;
 
         if ($isTree) {
             if (!empty($elements)) {
@@ -138,6 +140,27 @@ class Table
                     $this->io->write("<info>✓ 表格首列需为主键，已将 '{$idRef}' 移动到首位</info>");
                 }
 
+                // 拖动排序表格（-D）：列中没有任何名称含 ordernum 的元素、且其他有效列
+                // （排除 ordernum / Id / 含 delete 列）≥ 2 个时，询问是否自动补 @Ordernum 作为最后一个数据列
+                if ($isDrag) {
+                    list($dragRefs, $dragMsg) = $this->applyDragOrdernum($elementRefs);
+                    if ($dragMsg !== null) {
+                        $add = true;
+                        if ($this->io->isInteractive()) {
+                            $add = $this->io->confirm(
+                                "<question>拖动排序表格需要 ordernum 序号列（拖拽前端向 b_order 动作提交新顺序），当前列中没有：是否自动添加 '@Ordernum' 作为最后一个数据列？</question>",
+                                true
+                            );
+                        } else {
+                            $this->io->write('<comment>非交互模式：拖动排序表格缺少 ordernum 列，默认自动添加 @Ordernum（不想要请在 -e 中自行安排或事后移除）</comment>');
+                        }
+                        if ($add) {
+                            $elementRefs = $dragRefs;
+                            $this->io->write($dragMsg);
+                        }
+                    }
+                }
+
                 $lastRef = $elementRefs[count($elementRefs) - 1];
                 $lastName = ltrim($lastRef, '@~');
                 if (stripos($lastName, 'delete') === false) {
@@ -194,7 +217,14 @@ class Table
                 // 不依赖任何 composer 事件。集合名 = 模块名_控制器名（$configName）
                 $this->seedTreeCollection($configName);
             } else {
-                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn, $controllerFile);
+                // -D 且最终列中确实存在 ordernum 序号列（用户传入或上方自动补充）→ 控制器需 b_order 动作
+                foreach ($elementRefs as $r) {
+                    if (stripos(ltrim($r, '@~'), 'ordernum') !== false) {
+                        $dragWithOrder = true;
+                        break;
+                    }
+                }
+                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn, $controllerFile, $dragWithOrder);
             }
         }
 
@@ -234,6 +264,42 @@ class Table
         }
         $formElements[] = 'submit_reset';
         return $formElements;
+    }
+
+    /**
+     * 拖动排序表格（-D）的序号列规范化。
+     *
+     * 框架拖拽（xq-admin-page 的 sortupdate → b-order 动作）依赖列中的 ordernum 序号列回填排序值，
+     * 因此当列中【没有任何】名称含 ordernum 的元素、且其他有效列（排除 ordernum / Id / 含 delete 的
+     * 操作列）≥ 2 个时，给出把 @Ordernum（base 模块元素）插为最后一个数据列的建议方案（由调用方
+     * 交互询问是否采纳后再应用）：末列是删除类操作列则插在其前（@EditDelete 之前），
+     * 否则插到末尾（随后仍会走 @EditDelete 询问追加）。已有 ordernum 列时保持原位不动。
+     *
+     * @return array{0: string[], 1: ?string} [规范化后的列引用, 需打印的提示（未改动则为 null）]
+     */
+    private function applyDragOrdernum(array $elementRefs): array
+    {
+        $hasOrdernum = false;
+        $validOthers = 0;
+        foreach ($elementRefs as $r) {
+            $n = ltrim($r, '@~');
+            if (stripos($n, 'ordernum') !== false) {
+                $hasOrdernum = true;
+            } elseif (strcasecmp($n, 'Id') !== 0 && stripos($n, 'delete') === false) {
+                $validOthers++;
+            }
+        }
+        if ($hasOrdernum || $validOthers < 2) {
+            return [$elementRefs, null];
+        }
+
+        $lastBare = ltrim($elementRefs[count($elementRefs) - 1], '@~');
+        $beforeEdit = stripos($lastBare, 'delete') !== false;
+        $pos = $beforeEdit ? count($elementRefs) - 1 : count($elementRefs);
+        array_splice($elementRefs, $pos, 0, ['@Ordernum']);
+
+        return [$elementRefs, "<info>✓ 拖动排序表格需序号列：已自动添加 '@Ordernum'"
+            . ($beforeEdit ? '（位于 @EditDelete 之前）' : '') . '</info>'];
     }
 
     /**
@@ -866,12 +932,14 @@ class Table
      * 框架即可按约定解析动作，控制器即“存在”。仅当 $controllerFile=true（命令行 -f/--controller-file）
      * 时才落地实体文件（继承 xqkeji\mvc\Controller，动作由基类按约定解析）。
      * 无论是否落地文件，都会补齐 acl/menu/lang 初始化，与 xqkeji:controller 保持一致
-     * （动作集 add/edit/admin/delete/change；不含树表专属的 move）。
+     * （动作集 add/edit/admin/delete/change；不含树表专属的 move；
+     *   -D 拖动排序且列中有 ordernum 序号列时额外加 b_order）。
      *
      * @param string $tableCn        表格中文名（作为控制器显示名，来自 Lang::resolve）
      * @param bool   $controllerFile 是否生成控制器实体文件（默认 false=虚拟控制器）
+     * @param bool   $dragWithOrder  拖动排序表格且含 ordernum 列：动作集追加 b_order（acl + zh_cn 同步）
      */
-    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn, bool $controllerFile = false): void
+    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn, bool $controllerFile = false, bool $dragWithOrder = false): void
     {
         $className = $this->toCamelCase($tableName);
         $ctrlPath = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
@@ -895,13 +963,62 @@ class Table
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
         // 动作集含 change；顺序 add/edit/admin/delete/change（不含树表专属的 move）；普通表中文名作为控制器显示名
+        // -D 拖动排序且列中有 ordernum 序号列时：
+        //   1) 复制 example 模板 controller/order/Admin.php → controller/{表名蛇形}/Admin.php
+        //      （继承 xqkeji\mvc\action\Admin，protected $order=['ordernum'=>'asc'] 让列表默认按序号排序），
+        //      占位符替换方式与树表模板一致；
+        //   2) 动作集追加 b_order（拖拽 JS 向 /b-order 提交新顺序，acl/lang 需放行并翻译）
+        $actions = ['add', 'edit', 'admin', 'delete', 'change'];
+        if ($dragWithOrder) {
+            $this->ensureDragAdminController($modulePath, $currentModule, $tableName);
+            $actions[] = 'b_order';
+            $this->io->write("<info>✓ 拖动排序表格（-D + ordernum 列）：acl.php 动作与 zh_cn.php 已加入 'b_order'（批量排序）</info>");
+        }
         $controller = new Controller($this->io, $this->composer);
         $controller->initControllerConfig(
             $modulePath,
             $this->toSnakeCase($tableName),
-            ['add', 'edit', 'admin', 'delete', 'change'],
+            $actions,
             $tableCn
         );
+    }
+
+    /**
+     * 拖动排序表格（-D + ordernum 列）：复制控制器动作模板，得到默认按序号排序的列表动作。
+     *
+     * 目标：{模块路径}/controller/{表名全小写蛇形}/Admin.php
+     * 源模板：插件自身的 src/example/src/controller/order/Admin.php
+     * （继承 xqkeji\mvc\action\Admin，protected $order=['ordernum'=>'asc'];）
+     * 占位符替换与树表模板一致：{MODULE_NAME} -> 当前模块、{CONTROLLER_NAME} -> 表名蛇形。
+     * 幂等：目标文件已存在则跳过，不覆盖手工修改。
+     */
+    private function ensureDragAdminController(string $modulePath, string $currentModule, string $tableName): void
+    {
+        $dirName = $this->toSnakeCase($tableName);
+        $ctrlDir = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $dirName;
+        $target = $ctrlDir . DIRECTORY_SEPARATOR . 'Admin.php';
+
+        if (is_file($target)) {
+            $this->io->write("<comment>⊘ 控制器动作类已存在，跳过复制: {$target}</comment>");
+            return;
+        }
+
+        $tplFile = __DIR__ . DIRECTORY_SEPARATOR . 'example' . DIRECTORY_SEPARATOR
+            . 'src' . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . 'order' . DIRECTORY_SEPARATOR . 'Admin.php';
+        $content = is_file($tplFile) ? file_get_contents($tplFile) : false;
+        if ($content === false) {
+            $this->io->write("<error>未找到拖动排序控制器模板: {$tplFile}，已跳过 Admin.php 创建</error>");
+            return;
+        }
+
+        if (!is_dir($ctrlDir) && !mkdir($ctrlDir, 0755, true) && !is_dir($ctrlDir)) {
+            $this->io->write("<error>创建控制器目录失败: {$ctrlDir}</error>");
+            return;
+        }
+
+        $content = str_replace(['{MODULE_NAME}', '{CONTROLLER_NAME}'], [$currentModule, $dirName], $content);
+        file_put_contents($target, $content);
+        $this->io->write("<info>✓ 拖动排序表格：已创建按 ordernum 升序的默认列表动作类: {$target}</info>");
     }
 
     /**

@@ -44,6 +44,9 @@ class ActionCommand extends BaseCommand
   composer xqkeji:action Delete
   composer xqkeji:action b_close
 
+  <comment># 创建 Admin 动作：交互式设置默认排序 $order（如 ordernum + asc → protected $order = ['ordernum' => 'asc'];）与默认查询条件 $conditions（如 pos_id = 4 → protected $conditions = [['pos_id', '=', 4]];）</comment>
+  composer xqkeji:action Admin
+
   <comment># 指定中文名称，写入 lang/zh_cn.php（四种写法等价）</comment>
   composer xqkeji:action b_close -t 批量关闭
   composer xqkeji:action b_close -t=批量关闭
@@ -66,7 +69,9 @@ class ActionCommand extends BaseCommand
 <info>说明：</info>
 
   - 动作创建在当前上下文指定的控制器下进行，请先使用 xqkeji:use -c 切换控制器
-  - 预定义动作继承 xqkeji\mvc\action\ 下对应的动作基类，并重载 run() 方法调用 parent::run()
+  - Admin 动作创建时会交互式询问【默认排序 \$order】：逐个输入排序字段名（如 ordernum，留空跳过）与该字段的排序方式（asc / desc，默认 asc），可继续添加多个字段（覆盖同名重复设置）；有设置则在类体写入 protected \$order = ['字段' => 'asc|desc', ...];，未设置则不写入该属性；非交互模式直接跳过
+  - Admin 动作还会交互式询问【默认查询条件 \$conditions】：逐个输入三元组——字段名（如 pos_id，留空跳过）、操作符（= / <> / > / >= / < / <= / like / regex，默认 =）、值（纯数字按数字写入，其余按字符串写入），可继续添加多个条件；有设置则在类体写入 protected \$conditions = [['字段', '操作符', 值], ...];（如 [['pos_id', '=', 4], ['status', '=', 1]]），未设置则不写入该属性；非交互模式直接跳过
+  - 预定义动作继承 xqkeji\mvc\action\ 下对应的动作基类，生成空类体（行为完全由基类提供，无需重写 run()）
   - 其他动作名继承 xqkeji\mvc\Action 基类，需自行实现 run() 方法
   - 动作名含 _ 或 - 时，第一部分变为子目录名，其余转为大驼峰作为类名
     例：b_close → b/Close.php，change_password → change/Password.php
@@ -148,7 +153,15 @@ EOF
 
         // 生成文件内容
         if ($isPredefined) {
-            $content = $this->generatePredefinedAction($namespace, $className, $baseUseClass);
+            // Admin 动作：交互式设置默认排序 $order（字段 + asc/desc，可多组）与查询条件 $conditions
+            // （每组 字段/操作符/值 三元组，可多条），有设置才写入对应类属性
+            $order = [];
+            $conditions = [];
+            if ($className === 'Admin') {
+                $order = $this->collectOrderInteractive();
+                $conditions = $this->collectConditionsInteractive();
+            }
+            $content = $this->generatePredefinedAction($namespace, $className, $baseUseClass, $order, $conditions);
         } else {
             $content = $this->generateCustomAction($namespace, $className);
         }
@@ -189,10 +202,142 @@ EOF
     }
 
     /**
-     * 生成预定义动作类（继承基类动作，重载 run 方法）
+     * Admin 动作的排序交互：逐个询问 排序字段 + asc/desc（可多组），留空跳过。
+     *
+     * 返回 [字段 => 排序方式] 有序映射；未设置/非交互模式返回空数组（调用方据此不写属性）。
      */
-    private function generatePredefinedAction(string $namespace, string $className, string $baseUseClass): string
+    private function collectOrderInteractive(): array
     {
+        $io = $this->getIO();
+        if (!$io->isInteractive()) {
+            return [];
+        }
+
+        $order = [];
+        $question = '<question>是否设置默认排序 $order？输入排序字段名（如 ordernum，留空跳过）:</question> ';
+        while (true) {
+            $field = trim((string)$io->ask($question, ''));
+            if ($field === '') {
+                break;
+            }
+            if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $field)) {
+                $io->write('<error>字段名无效（只能为字母/数字/下划线且字母开头），请重新输入</error>');
+                continue;
+            }
+            $dir = strtolower(trim((string)$io->ask("<question>字段 '{$field}' 的排序方式（asc / desc）:</question> ", 'asc')));
+            if (!in_array($dir, ['asc', 'desc'], true)) {
+                $io->write("<error>无效排序方式 '{$dir}'，已按 asc 处理</error>");
+                $dir = 'asc';
+            }
+            if (isset($order[$field])) {
+                $io->write("<comment>⚠ 字段 '{$field}' 已设置过，本次覆盖为 {$dir}</comment>");
+            }
+            $order[$field] = $dir;
+            if (!$io->confirm('<question>是否继续添加下一个排序字段？</question>', false)) {
+                break;
+            }
+        }
+
+        if (empty($order)) {
+            $io->write('<comment>⊘ 未设置排序：Admin 类不写入 $order 属性（默认按主基类约定排序）</comment>');
+        }
+        return $order;
+    }
+
+    /**
+     * Admin 动作的查询条件交互：循环录入多维数组 $conditions，每条为三元组 [字段, 操作符, 值]。
+     *
+     * 例：[['pos_id','=',4],['status','=',1]]。字段留空结束；操作符限 = <> > >= < <= like regex；
+     * 值输入纯数字按数字写入（int/float），其余按字符串写入。返回三元组列表，未设置返回空数组。
+     */
+    private function collectConditionsInteractive(): array
+    {
+        $io = $this->getIO();
+        if (!$io->isInteractive()) {
+            return [];
+        }
+
+        $conditions = [];
+        $question = '<question>是否设置默认查询条件 $conditions？输入字段名（如 pos_id，留空跳过）:</question> ';
+        while (true) {
+            $field = trim((string)$io->ask($question, ''));
+            if ($field === '') {
+                break;
+            }
+            if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $field)) {
+                $io->write('<error>字段名无效（只能为字母/数字/下划线且字母开头），请重新输入</error>');
+                continue;
+            }
+
+            $opPrompt = "<question>字段 '{$field}' 的操作符（= / <> / > / >= / < / <= / like / regex）:</question> ";
+            $op = strtolower(trim((string)$io->ask($opPrompt, '=')));
+            while (!in_array($op, ['=', '<>', '>', '>=', '<', '<=', 'like', 'regex'], true)) {
+                $io->write("<error>无效操作符 '{$op}'，仅支持 = <> > >= < <= like regex，请重新输入（留空按 = 处理）</error>");
+                $op = strtolower(trim((string)$io->ask($opPrompt, '=')));
+                if ($op === '') {
+                    $op = '=';
+                }
+            }
+
+            $value = trim((string)$io->ask("<question>字段 '{$field}' 的查询值（第 3 项，数字按数字、其余按字符串写入）:</question> ", '0'));
+            while ($value === '') {
+                $io->write('<error>查询值不能为空，请重新输入</error>');
+                $value = trim((string)$io->ask("<question>字段 '{$field}' 的查询值:</question> ", '0'));
+            }
+
+            $conditions[] = [$field, $op, $value];
+            if (!$io->confirm('<question>是否继续添加下一个查询条件？</question>', false)) {
+                break;
+            }
+        }
+
+        if (empty($conditions)) {
+            $io->write('<comment>⊘ 未设置查询条件：Admin 类不写入 $conditions 属性</comment>');
+        }
+        return $conditions;
+    }
+
+    /**
+     * 渲染单个条件值：纯数字 → 数字字面量（整数去前导零/浮点保留），其余 → 字符串字面量。
+     */
+    private static function renderConditionValue(string $value): string
+    {
+        if (is_numeric($value)) {
+            if (ctype_digit(ltrim($value, '-')) || preg_match('/^-?\d+$/', $value)) {
+                return (string)(int)$value;
+            }
+            return var_export((float)$value, true);
+        }
+        return var_export($value, true);
+    }
+
+    /**
+     * 生成预定义动作类（继承基类动作，空类体，行为完全由基类动作提供）
+     *
+     * $order 非空时在类体写入 protected $order = ['字段' => 'asc|desc', ...];（Admin 默认排序）；
+     * $conditions 非空时写入 protected $conditions = [[字段, 操作符, 值], ...];（Admin 默认查询条件）。
+     * 不生成 run() 重写：动作行为完全由基类 xqkeji\mvc\action\* 提供，子类空类体即可（宿主既有动作类同此约定）。
+     */
+    private function generatePredefinedAction(string $namespace, string $className, string $baseUseClass, array $order = [], array $conditions = []): string
+    {
+        $body = '';
+        if (!empty($order)) {
+            $pairs = [];
+            foreach ($order as $field => $dir) {
+                $pairs[] = "'{$field}' => '{$dir}'";
+            }
+            $body .= "    protected \$order = [" . implode(', ', $pairs) . "];\n";
+        }
+
+        if (!empty($conditions)) {
+            $items = [];
+            foreach ($conditions as $c) {
+                [$field, $op, $value] = $c;
+                $items[] = "['{$field}', '{$op}', " . self::renderConditionValue((string)$value) . ']';
+            }
+            $body .= "    protected \$conditions = [" . implode(', ', $items) . "];\n";
+        }
+
         return <<<PHP
 <?php
 namespace {$namespace};
@@ -201,11 +346,7 @@ use {$baseUseClass} as BaseAction;
 
 class {$className} extends BaseAction
 {
-    public function run()
-    {
-        parent::run();
-    }
-}
+{$body}}
 
 PHP;
     }

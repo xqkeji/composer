@@ -252,6 +252,9 @@
   composer xqkeji:action Delete
   composer xqkeji:action b_close
 
+  # 创建 Admin 动作：交互式设置默认排序 $order（如 ordernum + asc → protected $order = ['ordernum' => 'asc'];）与默认查询条件 $conditions（如 pos_id = 4 → protected $conditions = [['pos_id', '=', 4]];）
+  composer xqkeji:action Admin
+
   # 指定中文名称，写入 lang/zh_cn.php（四种写法等价）
   composer xqkeji:action b_close -t 批量关闭
   composer xqkeji:action b_close -t=批量关闭
@@ -274,7 +277,9 @@
 说明：
 
   - 动作创建在当前上下文指定的控制器下进行，请先使用 xqkeji:use -c 切换控制器
-  - 预定义动作继承 xqkeji\mvc\action\ 下对应的动作基类，并重载 run() 方法调用 parent::run()
+  - Admin 动作创建时会交互式询问【默认排序 \$order】：逐个输入排序字段名（如 ordernum，留空跳过）与该字段的排序方式（asc / desc，默认 asc），可继续添加多个字段（覆盖同名重复设置）；有设置则在类体写入 protected \$order = ['字段' => 'asc|desc', ...];，未设置则不写入该属性；非交互模式直接跳过
+  - Admin 动作还会交互式询问【默认查询条件 \$conditions】：逐个输入三元组——字段名（如 pos_id，留空跳过）、操作符（= / <> / > / >= / < / <= / like / regex，默认 =）、值（纯数字按数字写入，其余按字符串写入），可继续添加多个条件；有设置则在类体写入 protected \$conditions = [['字段', '操作符', 值], ...];（如 [['pos_id', '=', 4], ['status', '=', 1]]），未设置则不写入该属性；非交互模式直接跳过
+  - 预定义动作继承 xqkeji\mvc\action\ 下对应的动作基类，生成空类体（行为完全由基类提供，无需重写 run()）
   - 其他动作名继承 xqkeji\mvc\Action 基类，需自行实现 run() 方法
   - 动作名含 _ 或 - 时，第一部分变为子目录名，其余转为大驼峰作为类名
     例：b_close → b/Close.php，change_password → change/Password.php

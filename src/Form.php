@@ -9,6 +9,7 @@ class Form
 {
     use PathTrait;
     use ElInsertTrait;
+    use ConfirmTrait;
 
     private IOInterface $io;
     private Composer $composer;
@@ -134,7 +135,8 @@ class Form
                 if (stripos($lastName, 'submit') === false) {
                     $add = true;
                     if ($this->io->isInteractive()) {
-                        $add = $this->io->confirm(
+                        $add = $this->confirmIO(
+                            $this->io,
                             "<question>最后一个元素 '{$lastName}' 不含 submit，是否自动追加提交/重置按钮 @SubmitReset 作为最后一个元素？</question>",
                             true
                         );

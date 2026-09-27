@@ -6,12 +6,14 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use xqkeji\composer\ConfirmTrait;
 use xqkeji\composer\Context;
 use xqkeji\composer\Lang;
 
 class ActionCommand extends BaseCommand
 {
     use NormalizesShortOptions;
+    use ConfirmTrait;
 
     /**
      * 预定义动作列表（继承 xqkeji/mvc/action/ 下的动作类）
@@ -233,7 +235,7 @@ EOF
                 $io->write("<comment>⚠ 字段 '{$field}' 已设置过，本次覆盖为 {$dir}</comment>");
             }
             $order[$field] = $dir;
-            if (!$io->confirm('<question>是否继续添加下一个排序字段？</question>', false)) {
+            if (!$this->confirmIO($io, '<question>是否继续添加下一个排序字段？</question>', false)) {
                 break;
             }
         }
@@ -286,7 +288,7 @@ EOF
             }
 
             $conditions[] = [$field, $op, $value];
-            if (!$io->confirm('<question>是否继续添加下一个查询条件？</question>', false)) {
+            if (!$this->confirmIO($io, '<question>是否继续添加下一个查询条件？</question>', false)) {
                 break;
             }
         }

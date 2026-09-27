@@ -9,6 +9,7 @@ class Table
 {
     use PathTrait;
     use ElInsertTrait;
+    use ConfirmTrait;
 
     /**
      * 自动配套表单时，从表格列中剔除的“仅表格”元素（主键 / 时间戳 / 操作列），按蛇形名匹配。
@@ -147,7 +148,8 @@ class Table
                     if ($dragMsg !== null) {
                         $add = true;
                         if ($this->io->isInteractive()) {
-                            $add = $this->io->confirm(
+                            $add = $this->confirmIO(
+                                $this->io,
                                 "<question>拖动排序表格需要 ordernum 序号列（拖拽前端向 b_order 动作提交新顺序），当前列中没有：是否自动添加 '@Ordernum' 作为最后一个数据列？</question>",
                                 true
                             );
@@ -166,7 +168,8 @@ class Table
                 if (stripos($lastName, 'delete') === false) {
                     $add = true;
                     if ($this->io->isInteractive()) {
-                        $add = $this->io->confirm(
+                        $add = $this->confirmIO(
+                            $this->io,
                             "<question>最后一列 '{$lastName}' 不含 delete，是否自动追加操作列 @EditDelete 作为最后一个元素？</question>",
                             true
                         );

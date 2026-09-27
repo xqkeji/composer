@@ -1,6 +1,8 @@
 <?php
 namespace xqkeji\composer\command;
 
+use xqkeji\composer\ConfirmTrait;
+
 /**
  * -e/--element 只给出选项、未给出任何元素值时，进入交互式循环逐个收集元素名称：
  * 每次询问元素名（留空结束）→ 加入列表 → 询问是否继续（否结束）。
@@ -9,6 +11,7 @@ namespace xqkeji\composer\command;
  */
 trait ElementLoopTrait
 {
+    use ConfirmTrait;
     /**
      * @param \Composer\IO\IOInterface $io    命令 IO
      * @param string $typeCn                  称呼（“元素”/“列元素”），用于提示文案
@@ -37,7 +40,7 @@ trait ElementLoopTrait
                 continue;
             }
             $names[] = $n;
-            if (!$io->confirm("<question>已加入 {$typeCn} '{$n}'，是否继续添加下一个{$typeCn}？</question>", true)) {
+            if (!$this->confirmIO($io, "<question>已加入 {$typeCn} '{$n}'，是否继续添加下一个{$typeCn}？</question>", true)) {
                 break;
             }
         }

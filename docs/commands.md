@@ -482,7 +482,7 @@
 | --- | --- | --- | --- | --- |
 | `--element` | -e | 可选值 | 是 | 表格元素列表（可多次使用，或用逗号分隔：id,Username）；只传 -e 不带任何元素值时进入交互循环逐个添加 |
 | `--tree` | -T | 不需要值 | 否 | 创建树形表格（继承 TreegridTable） |
-| `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行） |
+| `--drag` | -D | 不需要值 | 否 | 创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行）。创建时未传 -D 但最终列中含 ordernum 元素也会自动按拖动排序处理（等效 -D，无需再设置一次）。创建时：元素中没有 ordernum 元素且其他有效列（非 ordernum/Id/含 delete）≥2 个 → 询问是否自动添加 @Ordernum 作为最后一个数据列（@EditDelete 之前）；-D 且元素有 ordernum 时（两者同时具备才判断）acl.php 动作集加入 b_order 并更新 zh_cn.php，同时复制模板生成控制器目录 controller/{表名蛇形}/Admin.php（继承 xqkeji\mvc\action\Admin，protected $order = [ordernum => asc] 默认排序，已存在则跳过不覆盖） |
 | `--no-controller` | -N | 不需要值 | 否 | 仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合 |
 | `--controller-file` | -f | 不需要值 | 否 | 生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件 |
 | `--no-form` | -F | 不需要值 | 否 | 创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单） |
@@ -556,6 +556,10 @@
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
   - 使用 -D/--drag 创建可拖动排序的普通表格：仍继承 Table，仅在表格类中额外生成 protected \$isDrag = true;
+  - 自动等效 -D：创建时未传 -D，只要 -e 最终列中含有名称 ordernum 的元素（如 @Ordernum / ~OrdernumXxx），即自动按拖动排序表格处理（表格类同样写入 protected \$isDrag = true;，与下方 b_order/Admin.php 链路同开同关），无需再补传 -D 设置一次
+  - -D 创建时的序号列（ordernum）规则：拖拽排序前端依赖 ordernum 序号列（向 /b-order 提交新顺序）。若 -e 列中【没有任何】名称含 ordernum 的元素、且其他有效列（排除 ordernum/Id/含 delete 的操作列）≥ 2 个，则**交互式询问**是否自动添加 '@Ordernum'（base 模块元素）作为最后一个数据列：末列已是删除类操作列时插在其前（@EditDelete 之前），否则插到末尾（随后仍走 @EditDelete 询问追加）；非交互模式默认添加并提示；已有 ordernum 列（如 ~OrdernumXxx / @Ordernum）则不询问、保持原位不动
+  - -D 且最终列中【存在】ordernum 序号列时（-D 与 ordernum 两者同时具备才判断生效），控制器动作集自动追加 'b_order'：写入 acl.php（add/edit/admin/delete/change/b_order），并在 zh_cn.php 生成批量排序文案（'{模块} {控制器} b_order title/success/failed'、'{模块} module {控制器} b_order auth'，中文名“批量排序{控制器}”）；-N（不建控制器）时不涉及 acl/lang
+  - 同上条件（-D + ordernum 列）还会复制插件模板 src/example/src/controller/order/Admin.php 到控制器目录 controller/{表名全小写蛇形}/Admin.php：继承 xqkeji\mvc\action\Admin、protected \$order=['ordernum'=>'asc'];，使拖拽排序表的列表默认按序号升序；占位符 {MODULE_NAME}/{CONTROLLER_NAME} 自动替换；目标文件已存在则跳过（不覆盖手工修改）；该动作类目录与虚拟控制器并存（-f 实体文件仍按 -f 规则生成）
   - 表格类【已存在】时执行 -D 不会新建表格，而是直接为已有表格类补写拖动参数（幂等）：无 \$isDrag 则在 \$el 属性前插入 protected \$isDrag = true;；\$isDrag = false 则改为 true；已是 true 则跳过。可只传表名 + -D 单独执行，不需要 -e；树状表格（TreegridTable）自带拖拽，执行 -D 会提示并跳过
   - -D 与 -T 互斥：树形表格自带拖拽排序，指定 -T 时忽略 -D
   - 创建树形表格时会自动检查并复制对应的树状控制器动作类（controller/{表格名}/）

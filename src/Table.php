@@ -200,6 +200,18 @@ class Table
             }
         }
 
+        // 列中含 ordernum 序号列即视为拖动排序表格：自动按 -D 处理（无需用户显式传 -D 再设置一次），
+        // 表格类写入 protected $isDrag = true;，与 b_order/Admin.php 链路保持同开同关
+        if (!$isTree && !$isDrag) {
+            foreach ($elementRefs as $r) {
+                if (stripos(ltrim($r, '@~'), 'ordernum') !== false) {
+                    $isDrag = true;
+                    $this->io->write("<info>✓ 列中含 ordernum 序号列，自动按拖动排序表格处理（等同 -D，表格类写入 protected \$isDrag = true;）</info>");
+                    break;
+                }
+            }
+        }
+
         // 创建表格类
         $this->createTableFile($tablePath, $className, $configName, $elementRefs, $currentModule, $isTree, $isDrag);
 

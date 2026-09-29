@@ -1490,7 +1490,7 @@ PHP;
      * 框架即可按约定解析动作，控制器即“存在”。仅当 $controllerFile=true（命令行 -f/--controller-file）
      * 时才落地实体文件（继承 xqkeji\mvc\Controller，动作由基类按约定解析）。
      * 无论是否落地文件，都会补齐 acl/menu/lang 初始化，与 xqkeji:controller 保持一致
-     * （动作集 add/edit/admin/delete/change；不含树表专属的 move；
+     * （动作集 add/edit/admin/delete/change/b_delete（base 底栏固定有批量删除按钮）；不含树表专属的 move；
      *   -D 拖动排序且列中有 ordernum 序号列时额外加 b_order）。
      *
      * @param string $tableCn        表格中文名（作为控制器显示名，来自 Lang::resolve）
@@ -1520,13 +1520,15 @@ PHP;
         }
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
-        // 动作集含 change；顺序 add/edit/admin/delete/change（不含树表专属的 move）；普通表中文名作为控制器显示名
+        // 动作集含 change 与 b_delete；顺序 add/edit/admin/delete/change/b_delete（不含树表专属的 move）；普通表中文名作为控制器显示名
+        // b_delete 必带：base 的 @Foot 底栏固定渲染「删除」批量按钮（AddDelete 的两条按钮为 add + b_delete），
+        // 前端 xq-batch 会把选中行 POST 到 …/{控制器}/b_delete，acl 不放行则按钮点了无效
         // -D 拖动排序且列中有 ordernum 序号列时：
         //   1) 复制 example 模板 controller/order/Admin.php → controller/{表名蛇形}/Admin.php
         //      （继承 xqkeji\mvc\action\Admin，protected $order=['ordernum'=>'asc'] 让列表默认按序号排序），
         //      占位符替换方式与树表模板一致；
         //   2) 动作集追加 b_order（拖拽 JS 向 /b-order 提交新顺序，acl/lang 需放行并翻译）
-        $actions = ['add', 'edit', 'admin', 'delete', 'change'];
+        $actions = ['add', 'edit', 'admin', 'delete', 'change', 'b_delete'];
         if ($dragWithOrder) {
             $this->ensureDragAdminController($modulePath, $currentModule, $tableName);
             $actions[] = 'b_order';

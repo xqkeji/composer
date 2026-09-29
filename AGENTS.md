@@ -34,7 +34,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 
 - 名称大小写自适应：输入 `user` / `user_login` → 类名大驼峰 `User` / `UserLogin`；配置文件里的名字用小写下划线（蛇形）。各命令里反复出现的 `toCamelCase` / `toSnakeCase` 就是这套转换。
 - `$el` 数组中的元素引用前缀：`@ElementName` = 复用 **base 模块**已有的元素；`~ElementName` = 复用/新建 **当前模块**的元素（`Form`/`Table::processElement` 先查 base 再查当前模块，都查不到才新建）。
-- **`select_` 约定**：元素名转蛇形后以 `select_` 开头（`select_dept` 或 `SelectDept` 均可），自动创建**继承 `xqkeji\form\element\SelectModel` 的空子类**、不询问中文名，表单中以 `~SelectDept` 引用。
+- **`select_` 约定**：元素名转蛇形后以 `select_` 开头（`select_dept` 或 `SelectDept` 均可），自动创建**继承 `xqkeji\form\element\SelectModel` 的空子类**、不询问中文名，表单中以 `~SelectDept` 引用。表格侧对称：`xqkeji:table -e`/`-a`/`xqkeji:element`（表格模式）遇到 `select_` 列时免选类型、不询问中文名，生成**继承 `xqkeji\form\element\ListSelectModel` 的空子类**（无 `$name`/`$text`/`$attrs`，行为由基类提供），表格中以 `~SelectDept` 引用；表格元素类型列表也含 `ListSelectModel`（显式 `-y=ListSelectModel` 同样生成空子类）。
 - 短选项支持 `-x值` / `-x=值` / `--opt=值` 多种写法，由 `src/command/NormalizesShortOptions.php` 统一规范化；`Form/Table/Element` 的 `execute` 还会直接扫描 `$_SERVER['argv']` 做分组（如 form 的 `-b/-g` tab/全局分组、element 的 `-c/-e/-r` 动作），因此这些命令的参数解析不完全走 Symfony。
 
 ## 生成的文件布局（在目标模块目录下）
@@ -46,7 +46,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:model` | `model/{Class}.php` |
 | `xqkeji:action` | 控制器动作类；动作名写入语言文件 |
 | `xqkeji:form` | `form/{Class}.php`（继承 `Form`、`TabForm`（`-b`）或 `SearchForm`（`-s` 搜索表单，输入类元素带 `xq-s-字段,操作` 搜索规格、与 `-b/-g` 互斥））+ 所需 `form/element/{El}.php`；表单中文名入 lang |
-| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`，**未传 `-D` 但列含 ordernum 自动等效 `-D`**；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外；`-D`+ordernum 列时例外：复制 `src/example/src/controller/order/Admin.php` 模板落地 `controller/{表名蛇形}/Admin.php`，`$order=['ordernum'=>'asc']`，动作集加 `b_order`）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
+| `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`，**未传 `-D` 但列含 ordernum 自动等效 `-D`**；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；`--foot=动作列表` 时另生成本表专属 `table/element/Foot{Class}.php`（内联 base 的 Foot→Toolbar→AddDelete 三级，见下节）；非 `-N` 时初始化 acl/menu/lang，**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外；`-D`+ordernum 列时例外：复制 `src/example/src/controller/order/Admin.php` 模板落地 `controller/{表名蛇形}/Admin.php`，`$order=['ordernum'=>'asc']`，动作集加 `b_order`）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
 | `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地 |
@@ -57,12 +57,12 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 
 - `xqkeji:module {name} [-p 路径] [-t 中文名]` — 创建/注册模块。
 - `xqkeji:controller {name} [-e 入口] [-a auth|login] [-A 动作列表] [-t 中文名] [-f]` — 创建控制器 + 初始化 acl/menu/lang。
-- `xqkeji:use {name} [-m|-c|-f|-T]` — 切换当前模块/控制器，或设置 form/table 模式。
-- `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类；`Admin` 动作交互式询问默认排序 `$order`（逐个输入字段 + asc/desc，可多组）与默认查询条件 `$conditions`（逐个输入字段/操作符(= <> > >= < <= like regex，默认 =)/值，可多组；纯数字按数字、其余按字符串），有设置才写入对应 `protected $order = [...]` / `protected $conditions = [['字段', '操作符', 值], ...]` 属性，留空/非交互不写。
+- `xqkeji:use {name} [-m|-c|-f|-t]` — 切换当前模块/控制器，或设置 form/table 模式。
+- `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类；**预定义动作名统一小写**（`add`、`b_close`、`change_password`…，命令行大小写不敏感：`add`/`Add`/`ADD` 等价，匹配后规范为小写用于语言键与类名推导），生成的动作类文件仍为大驼峰（`add → Add.php`、`b_close → b/Close.php`），因为基类是大驼峰类名 `xqkeji\mvc\action\Add`、`xqkeji\mvc\action\b\Close`；自定义（非预定义）动作保持原始输入。`admin` 动作交互式询问默认排序 `$order`（逐个输入字段 + asc/desc，可多组）与默认查询条件 `$conditions`（逐个输入字段/操作符(= <> > >= < <= like regex，默认 =)/值，可多组；纯数字按数字、其余按字符串），有设置才写入对应 `protected $order = [...]` / `protected $conditions = [['字段', '操作符', 值], ...]` 属性，留空/非交互不写。
 - `xqkeji:model {name}` — 创建模型类。
-- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加 `@SubmitReset`；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时（**未传 `-D` 但列含 ordernum 会自动等效 `-D`**：表格类同样写入 `$isDrag = true`，无需用户再补设置一次）：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
-- `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型]` — 创建/修改/删除单个元素。
+- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加末尾按钮（普通表单 `@SubmitReset`，搜索表单 `-s` 为 `@SearchSubmit`）；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a] [--foot 按钮动作]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时（**未传 `-D` 但列含 ordernum 会自动等效 `-D`**：表格类同样写入 `$isDrag = true`，无需用户再补设置一次）：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
+- `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型] [-f 过滤器] [-t 验证规则]` — 创建/修改/删除单个元素。`-f/-t` 仅表单元素生效（写入 `protected $filters` / `protected $vt`），表格模式会提示并忽略，`select_`/`ListSelectModel` 空子类不写这两个属性。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
 - `xqkeji:doc [-o 输出目录]` — 反射导出 `docs/commands.json` + `commands.md`。
@@ -82,7 +82,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `$el` 条目写成数组项：`[ '@SearchKey', 'name' => 'xq-s-username|fullname,like' ]`；`xq-s-` 前缀固定，`|` 表示多字段“或”搜索，`,op` 为搜索操作。无输入控件（类名链尾含 submit/reset/button/hidden）仍写纯字符串引用。
 - **`@search` 模板**：搜索表单的输入元素统一用模板 `@search`（小写）。建 `-s` 表单时**新建**的元素类（含 select_ 子类）类体内写 `protected $template = '@search';`；**复用**的既有元素（`@X`/已有 `~X`，及 `-a` 追加）不改类文件，在 `$el` 数组项内联 `'template' => '@search'`；继承链已声明 `@search`（如 base SearchKey）则两者都省略。
 - **操作符用词别名**（符号 `= < >` 等会污染 GET URL）：`eq`(=) `ne`(<>) `gt`(>) `gte`(>=) `lt`(<) `lte`(<=) `in` `nin` `regex` `like`。
-- 规格来源优先级：**内联** `-e "元素=字段|字段,op"`（免询问）> **交互两问**（字段默认=元素名蛇形；操作默认：文本类元素 Text/Textarea/SearchKey 为 `like`，其余 `eq`）> **非交互默认值**（打印提示，等价直接回车）。内联规格可省略 `,op`、可带 `xq-s-` 前缀；非法则报错回退交互/默认。
+- 规格来源优先级：**内联** `-e "元素=字段|字段,op"`（免询问）> **交互两问**（字段默认=元素名蛇形，**select_ 前缀元素去掉 `select_` 再补 `_id`**，如 `select_section` → `section_id`；操作默认：文本类元素 Text/Textarea/SearchKey 为 `like`，其余 `eq`）> **非交互默认值**（打印提示，等价直接回车）。内联规格可省略 `,op`、可带 `xq-s-` 前缀；非法则报错回退交互/默认。
+- 搜索表单末尾自动追加的按钮与普通表单不同：`-s` 表单补 **`@SearchSubmit`**（base 的搜索按钮），普通表单补 `@SubmitReset`；末元素已含 `submit` 时不询问。
 - 实现：`Form::buildSearchEntry`（判定+询问）、`Form::parseSearchSpec`（内联解析）、`Form::elementClassChain`（沿 `class X extends Y` 上溯判定），`ElInsertTrait::elInsertRef` 支持数组项多行插入。
 
 ## 建表格时控制器默认虚拟（`-f` 才落地实体文件）
@@ -102,6 +103,20 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - 表单与表格**同名并共享控制器/中文名**（lang 键 `{模块} module {名蛇形}` 一致），元素中文名在建表时已写入 lang，所以建表单过程一般不再重复询问；`select_` 前缀列照常生成 SelectModel 子类。
 - 边界：`-e` 未传列、或列全部是“仅表格”元素 → 无可用表单列，**跳过**建表单；`-F/--no-form` 强制不建；`-N` 只影响控制器不影响自动建表单（要都跳过用 `-N -F`）。自动建表单后模式仍回到 table。
 
+## 表格底部操作栏按钮 `--foot`（不改 base 的 Foot/Toolbar/AddDelete）
+
+框架的表格底栏在 base 模块里是**三级共享类**：`Foot`（`<tfoot>`，`$name='list_foot'`）→ `Toolbar`（`<td colspan=99>`）→ `AddDelete`（`<div class="me-auto">` + 按钮）。所有普通表都 `$foot='@Foot'`，所以往底栏加一个按钮历史上只能改 base 的 `AddDelete`——一次改动影响全站表格，且写在 vendor 里 `composer update` 就丢；base 里已经因此堆了 `FootExport/ToolbarExport/AddDeleteExport`、`FootOnlyDelete` 这类“按钮组合变体”。
+
+`--foot` 把按钮改成**每表一份**：
+
+- `xqkeji:table {表} --foot=add,b_delete,export`（建表时）/ `xqkeji:table {表} --foot=export`（**已存在**表格）；`--foot` 不带值 = 交互循环录入动作名，`--no-interaction` 下必须给列表。
+- 产物：本模块 `table/element/Foot{Class}.php`，`extends ListFoot`、`$name='list_foot_{模块}_{表名蛇形}'`，`$el` 把三级结构**内联进单文件**（`@CheckAll` → 内联 `$ListItem`（td，`attr_colspan=99`）→ 内联 `$TableDiv`（`d-flex`）→ 内联 `$TableDiv`（`me-auto`，按钮组）+ `@Pager` + `@PageSize`）；表格类 `$foot` 改写为 `'~Foot{Class}'`（无 `$foot` 属性时在 `$el` 前补写）。结构照抄 base 已验证写法（`Foot`/`Toolbar`/`AddDelete`/`FootOnlyDelete`，以及宿主 `xq-app-edu` 的 `~FootDept`+`~ToolbarDept` 内联按钮先例）。
+- 按钮是声明式的：`['$Button','name'=>动作,'attrs'=>['value'=>文案,'class'=>'btn btn-X me-1 行为类']]`。**`name` 就是控制器动作**——`xq-com-admin-page` 的 `xq-batch` 会把选中行 POST 到 `…/{controller}/{name}`（`xq-url` 可覆盖），所以生成器同时把动作并入 `config/acl.php` 并补 `zh_cn.php` 的 title/success/failed/auth（`Controller::mergeControllerActions`：读原动作列表取并集写回，不覆盖已有；`Lang::set` 只在键缺失时赋值）。
+- 内置词表 `Table::FOOT_BUTTONS`：`add 添加(primary/xq-add)`、`b_delete 删除(danger/xq-batch)`、`b_open 启用(success/xq-batch)`、`b_close 禁用(secondary/xq-batch)`、`b_order 排序(info/xq-batch)`、`export 导出(warning/xq-export)`。未收录的动作名会问【按钮文案】与【前端行为类】（`FOOT_BEHAVIORS`：`xq-batch/xq-add/xq-edit/xq-view/xq-delete/xq-copy/xq-export/空`），非交互默认 `动作名 + xq-batch`。动作名统一小写、`-` 归一为 `_`（与 `xqkeji:action` 一致）。
+- 已存在表格的追加是**文本插入**（`insertFootButtons`）：定位最后一条 `'$Button'` 条目，回溯其数组 `[`、按括号深度（跳过引号内内容）找到配对 `]`，在其后插入缺失按钮，缩进沿用该行；`'name' => '动作'` 已存在则跳过，文件其余内容与手工编辑（含 tooltip 里的 `<br/>`、方括号）原样保留。
+- 按钮容器定位只沿 `'~X'`（当前模块）引用查（`locateFootButtonFile`，最多 5 个文件），**绝不写回 `'@X'`（base）文件**；若本表 foot 链里找不到内联按钮则报错提示手工内联后再用 `--foot`。
+- 边界：树表（`-T`）的 foot 由 `src/example` 的 tree 模板生成，`--foot` 提示并跳过；`-N` 只生成 foot 文件、不写 acl/lang；从 `@Foot` 切到 `~Foot{表}` 后，base foot 里其它按钮不再出现在这张表（需要就一并写进 `--foot`）。
+
 ## 常见工作流示例
 
 ```bash
@@ -113,4 +128,6 @@ composer xqkeji:form SearchUser -s -e "SearchKey=username|fullname,like" -e Sear
 composer xqkeji:table Article -e id,title,status,edit_delete  # 4) 建表格（自动建控制器+菜单，并自动派生同名表单）
 composer xqkeji:table Article -e id,title,status,edit_delete -F  #    加 -F 则不自动建表单
 composer xqkeji:table Article -a                  #    向已有表格追加一列
+composer xqkeji:table Article -e id,title,edit_delete --foot=add,b_delete,export   # 建表同时定制本表底部按钮
+composer xqkeji:table Article --foot=export       #    给已有表格加导出按钮（只改 table/element/FootArticle.php）
 ```

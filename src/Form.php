@@ -128,8 +128,11 @@ class Form
                 }
             }
 
-            // 带了 -e：元素统一规范化后，若最后一个元素名不含 submit，询问是否自动追加 @SubmitReset
+            // 带了 -e：元素统一规范化后，若最后一个元素名不含 submit，询问是否自动追加末尾提交按钮
+            // 搜索表单（-s）用 @SearchSubmit（搜索按钮），其它表单用 @SubmitReset（提交/重置）
             if (!empty($elements) && !empty($elementRefs)) {
+                $tailRef = $isSearchForm ? '@SearchSubmit' : '@SubmitReset';
+                $tailText = $isSearchForm ? '搜索按钮 @SearchSubmit' : '提交/重置按钮 @SubmitReset';
                 $last = $elementRefs[count($elementRefs) - 1];
                 $lastName = ltrim((is_array($last) ? $last['ref'] : $last), '@~');
                 if (stripos($lastName, 'submit') === false) {
@@ -137,15 +140,15 @@ class Form
                     if ($this->io->isInteractive()) {
                         $add = $this->confirmIO(
                             $this->io,
-                            "<question>最后一个元素 '{$lastName}' 不含 submit，是否自动追加提交/重置按钮 @SubmitReset 作为最后一个元素？</question>",
+                            "<question>最后一个元素 '{$lastName}' 不含 submit，是否自动追加{$tailText} 作为最后一个元素？</question>",
                             true
                         );
                     } else {
-                        $this->io->write('<comment>非交互模式：最后一个元素不含 submit，默认自动追加 @SubmitReset（不想要请在 -e 末尾自带提交类元素）</comment>');
+                        $this->io->write("<comment>非交互模式：最后一个元素不含 submit，默认自动追加 {$tailRef}（不想要请在 -e 末尾自带提交类元素）</comment>");
                     }
                     if ($add) {
-                        $elementRefs[] = '@SubmitReset';
-                        $this->io->write('<info>✓ 已在表单末尾追加 @SubmitReset</info>');
+                        $elementRefs[] = $tailRef;
+                        $this->io->write("<info>✓ 已在表单末尾追加 {$tailRef}</info>");
                     }
                 }
             }
@@ -219,7 +222,11 @@ class Form
             }
         }
 
+        // 默认搜索字段：select_ 前缀元素取掉前缀后的蛇形名 + _id（select_section → section_id），其余用元素名蛇形
         $defaultFields = $this->toSnakeCase($className);
+        if (strpos($defaultFields, 'select_') === 0) {
+            $defaultFields = substr($defaultFields, strlen('select_')) . '_id';
+        }
         $textish = false;
         foreach ($chain as $link) {
             if (preg_match(self::SEARCH_TEXTISH, $link['name'])) {

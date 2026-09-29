@@ -56,6 +56,10 @@ class FormCommand extends BaseCommand
   <comment>#   SearchKey → 问字段(默认 search_key，输入 username|fullname)、问操作(默认 like)</comment>
   <comment>#   Status → 问字段(默认 status)、问操作(默认 eq)；SearchSubmit → 无输入，直接引用</comment>
 
+  <comment># 搜索表单（-s）中的 select_ 元素：默认搜索字段自动去掉 select_ 并补 _id（外键列）</comment>
+  composer xqkeji:form SearchStudent -s -e select_section
+  <comment>#   SelectSection → 问字段(默认 section_id)、问操作(默认 eq)；末尾询问追加 @SearchSubmit（搜索表单专用提交按钮，非 @SubmitReset）</comment>
+
   <comment># 内联搜索规格免交互（xq-s- 前缀可省略，操作可省默认 like/eq）</comment>
   composer xqkeji:form UserSearch -s -e "SearchKey=username|fullname,like" -e "Status=status,eq" -e SearchSubmit
   composer xqkeji:form UserSearch -s -e "SearchKey=xq-s-username|fullname,like"
@@ -79,11 +83,11 @@ class FormCommand extends BaseCommand
   - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
   - 只传 -e 不带任何元素值（如 composer xqkeji:form User -e）：进入交互式循环添加模式，每次询问一个元素名称（留空结束），加入后询问是否继续添加下一个；循环结束后按下方规则处理末尾 @SubmitReset；--no-interaction 时报错退出；Tab 表单（-b/-g）不支持该模式
   - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
-  - 带了 -e 时末尾自动补提交按钮：元素先统一解析为 @/~ 引用，若最后一个元素名不含 submit（不区分大小写），交互式询问是否自动追加 @SubmitReset 作为最后一个元素（默认追加）；--no-interaction 时直接追加并提示；-b/-g 的 Tab 表单不做此检查（结构不同），搜索表单 -s 同样适用（末元素如 @SearchSubmit 已含 submit 则不询问）
+  - 带了 -e 时末尾自动补提交按钮：元素先统一解析为 @/~ 引用，若最后一个元素名不含 submit（不区分大小写），交互式询问是否自动追加末尾按钮作为最后一个元素（默认追加）；--no-interaction 时直接追加并提示；追加的按钮按表单类型区分【普通表单 → @SubmitReset（提交/重置）；搜索表单 -s → @SearchSubmit（搜索按钮）】；-b/-g 的 Tab 表单不做此检查（结构不同）；末元素已含 submit（如 @SearchSubmit、@SubmitReset）时不询问
   - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
   - 使用 -s/--search 创建搜索表单：生成的类 use xqkeji\form\SearchForm 并 extends SearchForm，自带 $attrs（method=get + d-flex 行内排版，与手写搜索表单一致）；目录、$name 蛇形、@/~ 元素引用、select_ 约定、中文名入 lang、自动切表单模式均与普通表单相同；与同名普通表单会因类文件同名冲突（form/{Class}.php 已存在则报错），建议起名如 {控制器}Search
   - 搜索表单元素规格：除无输入控件（类名或继承链以 Submit/Reset/Button/Hidden 结尾，如 @SearchSubmit、@SubmitReset，按普通字符串引用）外，每个元素的名字属性都写成 xq-s- 规格：$el 数组项 [ '@元素', 'name' => 'xq-s-字段|字段,操作' ]。字段多选用 | 分隔表示“或”搜索；操作符用词别名（GET 防 URL 污染）：like 模糊、eq =、ne <>、gt >、gte >=、lt <、lte <=、in、nin、regex
-  - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
+  - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形；select_ 前缀元素去掉 select_ 再补 _id，如 select_section → 默认 section_id、select_dept → dept_id，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
   - 搜索表单元素统一使用 '@search' 模板（小写，与 base 模块 SearchKey 一致）：建 -s 表单时【新建】的元素类（含 select_ 子类）直接在类体内写 protected \$template = '@search';（$el 引用保持干净）；【复用】的既有元素（@X 或已有 ~X，及 -a 向搜索表单追加的元素）不改其类文件，在 $el 数组项内联 'template' => '@search'；元素继承链中已声明 '@search' 时两者都不再重复添加
   - 向 SearchForm 用 -a 追加元素时同样会询问搜索字段与操作并插入数组项（现有列表中以 "@X name='xq-s-…'" 形式展示）
   - -s 与 -b/-g 互斥：同时指定会报错退出（基类只能有一个）

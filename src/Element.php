@@ -24,7 +24,14 @@ class Element
 
     // 表格元素类型列表
     private const TABLE_TYPES = [
-        'ListItem', 'TableDiv', 'TableHtml', 'Tbody', 'Td', 'Tfoot', 'Th', 'Thead', 'Tr',
+        'ListItem', 'TableDiv', 'TableHtml', 'Tbody', 'Td', 'Tfoot', 'Th', 'Thead', 'Tr', 'ListSelectModel',
+    ];
+
+    // 表单元素可用过滤器（$filters）
+    private const FILTER_TYPES = [
+        'absint', 'alnum', 'alpha', 'bool', 'email', 'float', 'int', 'lower', 'lowerFirst',
+        'regex', 'remove', 'replace', 'special', 'specialFull', 'string', 'striptags',
+        'trim', 'upper', 'upperFirst', 'upperWords', 'url', 'html',
     ];
 
     public function __construct(IOInterface $io, Composer $composer)
@@ -41,8 +48,10 @@ class Element
      * @param string|null $items 项目列表（null=无，''=交互输入，string=值1|文本1,值2|文本2）
      * @param string|null $defaultValue 默认值（null=无，''=交互输入，string=默认值）
      * @param string|null $modelName 模型名（null=无，''=交互输入，string=模型名）
+     * @param string|null $filters 过滤器（null=不设置，''=交互输入，string=trim,upper,replace=> |-,  形式）
+     * @param string|null $vt 验证规则（null=不设置，''=交互输入，string=required;length:3,20 形式）
      */
-    public function createElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null): void
+    public function createElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null, ?string $filters = null, ?string $vt = null): void
     {
         // 验证元素名称
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elementName)) {
@@ -99,9 +108,21 @@ class Element
             return;
         }
 
+        // 表格模式 select_ 前缀约定：免选类型，直接生成继承 ListSelectModel 的空子类（无 name 等属性、不询问中文名）
+        if ($currentMode !== 'form' && strpos($configName, 'select_') === 0) {
+            $this->writeListSelectElement($elementPath, $currentModule, $className, false);
+            return;
+        }
+
         // 确定元素类型
         $elementType = $this->resolveType($specifiedType, $types, $defaultType);
         if ($elementType === null) {
+            return;
+        }
+
+        // 表格模式显式选择 ListSelectModel：同样空类体，不询问中文名
+        if ($currentMode !== 'form' && $elementType === 'ListSelectModel') {
+            $this->writeListSelectElement($elementPath, $currentModule, $className, false);
             return;
         }
 
@@ -122,10 +143,22 @@ class Element
         // 解析默认值
         $parsedDefault = $this->resolveDefaultValue($defaultValue);
 
+        // 解析过滤器（$filters）与验证规则（$vt）：仅表单模式支持
+        if ($currentMode === 'form') {
+            $parsedFilters = $this->resolveFilters($filters);
+            $parsedVt = $this->resolveVt($vt);
+        } else {
+            $parsedFilters = null;
+            $parsedVt = null;
+            if ($filters !== null || $vt !== null) {
+                $this->io->write('<comment>⚠ 过滤器（-f）与验证规则（-v）仅表单元素支持，表格元素已忽略</comment>');
+            }
+        }
+
         // 生成并写入
         $useBaseClass = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . $elementType;
         $namespace = $this->getElementNamespace($currentModule, $currentMode);
-        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo);
+        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo, $parsedFilters, $parsedVt);
         file_put_contents($filePath, $content);
 
         $this->io->write("<info>✓ {$modeLabel}元素已创建: $filePath</info>");
@@ -139,8 +172,10 @@ class Element
      * @param string|null $items 项目列表
      * @param string|null $defaultValue 默认值
      * @param string|null $modelName 模型名
+     * @param string|null $filters 过滤器（null=不设置，''=交互输入）
+     * @param string|null $vt 验证规则（null=不设置，''=交互输入）
      */
-    public function editElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null): void
+    public function editElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null, ?string $filters = null, ?string $vt = null): void
     {
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $elementName)) {
             $this->io->write('<error>元素名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
@@ -186,9 +221,21 @@ class Element
             return;
         }
 
+        // 表格模式 select_ 前缀约定：免选类型，直接改写为继承 ListSelectModel 的空子类
+        if ($currentMode !== 'form' && strpos($configName, 'select_') === 0) {
+            $this->writeListSelectElement($elementPath, $currentModule, $className, true);
+            return;
+        }
+
         // 确定元素类型
         $elementType = $this->resolveType($specifiedType, $types, $defaultType);
         if ($elementType === null) {
+            return;
+        }
+
+        // 表格模式显式选择 ListSelectModel：同样空类体，不询问中文名
+        if ($currentMode !== 'form' && $elementType === 'ListSelectModel') {
+            $this->writeListSelectElement($elementPath, $currentModule, $className, true);
             return;
         }
 
@@ -208,9 +255,21 @@ class Element
         // 解析默认值
         $parsedDefault = $this->resolveDefaultValue($defaultValue);
 
+        // 解析过滤器（$filters）与验证规则（$vt）：仅表单模式支持
+        if ($currentMode === 'form') {
+            $parsedFilters = $this->resolveFilters($filters);
+            $parsedVt = $this->resolveVt($vt);
+        } else {
+            $parsedFilters = null;
+            $parsedVt = null;
+            if ($filters !== null || $vt !== null) {
+                $this->io->write('<comment>⚠ 过滤器（-f）与验证规则（-v）仅表单元素支持，表格元素已忽略</comment>');
+            }
+        }
+
         $useBaseClass = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . $elementType;
         $namespace = $this->getElementNamespace($currentModule, $currentMode);
-        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo);
+        $content = $this->generateElementContent($namespace, $className, $configName, $elementText, $elementType, $useBaseClass, $currentMode, $parsedItems, $parsedDefault, $modelInfo, $parsedFilters, $parsedVt);
         file_put_contents($filePath, $content);
 
         $this->io->write("<info>✓ {$modeLabel}元素已修改: $filePath</info>");
@@ -275,6 +334,27 @@ class Element
 
         unlink($filePath);
         $this->io->write("<info>✓ {$modeLabel}元素已删除: $filePath</info>");
+    }
+
+    /**
+     * 生成表格 select_ 元素（ListSelectModel 约定）：写入继承 xqkeji\form\element\ListSelectModel 的空子类，
+     * 类体不含 name/text/attrs 等属性、不写中文名称（与表单侧 select_ → SelectModel 空子类约定对称；
+     * 列表选项加载行为由框架基类按约定提供）。$overwrite=false 时已存在则提示跳过。
+     */
+    private function writeListSelectElement(string $elementPath, string $currentModule, string $className, bool $overwrite): void
+    {
+        $filePath = $elementPath . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!$overwrite && is_file($filePath)) {
+            $this->io->write("<comment>⚠ 表格元素已存在: $filePath</comment>");
+            return;
+        }
+
+        $namespace = $this->getElementNamespace($currentModule, 'table');
+        $useListSelectModel = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'ListSelectModel';
+        $content = "<?php\nnamespace {$namespace};\n\nuse {$useListSelectModel};\n\nclass {$className} extends ListSelectModel\n{\n}\n";
+        file_put_contents($filePath, $content);
+
+        $this->io->write("<info>✓ 已创建表格元素（ListSelectModel 子类，select_ 约定）: $filePath</info>");
     }
 
     /**
@@ -360,7 +440,7 @@ class Element
     /**
      * 生成元素类内容
      */
-    private function generateElementContent(string $namespace, string $className, string $configName, string $elementText, string $baseClass, string $useBaseClass, string $mode, ?array $items = null, ?string $defaultValue = null, ?array $modelInfo = null): string
+    private function generateElementContent(string $namespace, string $className, string $configName, string $elementText, string $baseClass, string $useBaseClass, string $mode, ?array $items = null, ?string $defaultValue = null, ?array $modelInfo = null, ?array $filters = null, ?array $vt = null): string
     {
         if ($mode === 'form') {
             // 根据类型确定 attrs
@@ -379,6 +459,10 @@ class Element
                 $defaultStr = "\n    protected \$defaultValue = '{$escapedDefault}';";
             }
 
+            // 构建验证规则（$vt）与过滤器（$filters）属性
+            $vtStr = $this->buildVtProperty($vt);
+            $filtersStr = $this->buildFiltersProperty($filters);
+
             // 构建 template 属性
             $templateStr = '';
             if (in_array($baseClass, ['Check', 'Radio'])) {
@@ -393,7 +477,7 @@ class Element
                 $beforeRenderStr = $this->buildBeforeRenderMethod($modelInfo);
             }
 
-            return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = {$attrs};{$itemsStr}{$defaultStr}{$templateStr}{$beforeRenderStr}\n}\n";
+            return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = {$attrs};{$itemsStr}{$defaultStr}{$vtStr}{$filtersStr}{$templateStr}{$beforeRenderStr}\n}\n";
         } else {
             $useModel = 'xqkeji' . '\\' . 'mvc' . '\\' . 'builder' . '\\' . 'Model';
             return "<?php\nnamespace {$namespace};\n\nuse {$useBaseClass};\nuse {$useModel};\n\nclass {$className} extends {$baseClass}\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'style' => 'min-width:200px;',\n    ];\n}\n";
@@ -542,6 +626,192 @@ class Element
         }
 
         return $defaultValue;
+    }
+
+    /**
+     * 解析过滤器（$filters）
+     * @param string|null $filters null=不设置，''=交互输入，string=形如 trim,upper,replace=> |-  的列表
+     * @return array|null 每项 ['name' => 过滤器名, 'params' => [参数...]]；不设置时返回 null
+     */
+    private function resolveFilters(?string $filters): ?array
+    {
+        if ($filters === null) {
+            return null;
+        }
+
+        if ($filters === '') {
+            if (!$this->io->isInteractive()) {
+                return null;
+            }
+            $this->io->write('<info>可用过滤器：' . implode(', ', self::FILTER_TYPES) . '</info>');
+            $line = $this->io->ask(
+                "<question>请输入过滤器（多个用逗号分隔，带参数写成 名称=>参数1|参数2；留空使用默认 'string'）:</question> ",
+                'string'
+            );
+            $filters = trim((string)$line);
+            if ($filters === '') {
+                $filters = 'string';
+            }
+        }
+
+        $result = $this->parseFilters($filters);
+        return $result === false ? null : $result;
+    }
+
+    /**
+     * 解析过滤器列表字符串；格式非法返回 false（调用方据此不写属性）
+     * @return array|false
+     */
+    private function parseFilters(string $raw)
+    {
+        $result = [];
+        foreach (explode(',', $raw) as $token) {
+            // 只去左侧空白：参数值本身可能是空格（如 replace=> |-）
+            $token = ltrim($token);
+            if ($token === '') {
+                continue;
+            }
+
+            $params = [];
+            if (strpos($token, '=>') !== false) {
+                list($name, $paramStr) = explode('=>', $token, 2);
+                $name = trim($name);
+                if ($paramStr === '') {
+                    $this->io->write("<error>过滤器 '{$name}' 声明了参数但没有取值，格式：名称=>参数1|参数2</error>");
+                    return false;
+                }
+                foreach (explode('|', $paramStr) as $p) {
+                    $params[] = $p;
+                }
+            } else {
+                $name = $token;
+            }
+
+            if (!in_array($name, self::FILTER_TYPES, true)) {
+                $this->io->write("<error>无效的过滤器 '{$name}'，可选类型：" . implode(', ', self::FILTER_TYPES) . '</error>');
+                return false;
+            }
+            $result[] = ['name' => $name, 'params' => $params];
+        }
+
+        if (empty($result)) {
+            $this->io->write('<error>过滤器格式无效，请使用：string 或 trim,upper 或 replace=> |-,</error>');
+            return false;
+        }
+        return $result;
+    }
+
+    /**
+     * 解析验证规则（$vt）
+     * @param string|null $vt null=不设置，''=交互输入，string=形如 required;length:3,20 的规则列表
+     * @return array|null 每条规则为一个数组（首元素=规则名，其后=参数）
+     */
+    private function resolveVt(?string $vt): ?array
+    {
+        if ($vt === null) {
+            return null;
+        }
+
+        if ($vt === '') {
+            if (!$this->io->isInteractive()) {
+                return null;
+            }
+            $line = $this->io->ask(
+                "<question>请输入验证规则（多条用分号分隔，规则参数用冒号分隔，如 required;length:3,20；留空不设置验证）:</question> ",
+                ''
+            );
+            $vt = trim((string)$line);
+            if ($vt === '') {
+                return null;
+            }
+        }
+
+        $result = [];
+        foreach (explode(';', $vt) as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if (strpos($token, ':') !== false) {
+                list($rule, $param) = explode(':', $token, 2);
+                $rule = trim($rule);
+                $param = trim($param);
+            } else {
+                $rule = $token;
+                $param = null;
+            }
+            // 规则名允许前端规则 $ 前缀（如 $required、$confirm）
+            if (!preg_match('/^\$?[A-Za-z_][A-Za-z0-9_]*$/', $rule)) {
+                $this->io->write("<error>无效的验证规则 '{$rule}'，规则名只能是字母、数字、下划线（前端规则可带 \$ 前缀）</error>");
+                return null;
+            }
+            $item = [$rule];
+            if ($param !== null && $param !== '') {
+                $item[] = $param;
+            }
+            $result[] = $item;
+        }
+
+        if (empty($result)) {
+            $this->io->write('<error>验证规则格式无效，请使用：required 或 required;length:3,20</error>');
+            return null;
+        }
+        return $result;
+    }
+
+    /**
+     * 构建 $filters 属性字符串
+     */
+    private function buildFiltersProperty(?array $filters): string
+    {
+        if ($filters === null || empty($filters)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($filters as $item) {
+            $escaped = $this->escapeSingleQuoted($item['name']);
+            if (empty($item['params'])) {
+                $parts[] = "'{$escaped}'";
+                continue;
+            }
+            $paramParts = [];
+            foreach ($item['params'] as $p) {
+                $paramParts[] = "'" . $this->escapeSingleQuoted($p) . "'";
+            }
+            $parts[] = "'{$escaped}' => [" . implode(', ', $paramParts) . ']';
+        }
+
+        return "\n    protected \$filters = [" . implode(', ', $parts) . '];';
+    }
+
+    /**
+     * 构建 $vt 属性字符串
+     */
+    private function buildVtProperty(?array $vt): string
+    {
+        if ($vt === null || empty($vt)) {
+            return '';
+        }
+
+        $lines = [];
+        foreach ($vt as $rule) {
+            $tokens = [];
+            foreach ($rule as $token) {
+                $tokens[] = "'" . $this->escapeSingleQuoted((string)$token) . "'";
+            }
+            $lines[] = '        [' . implode(', ', $tokens) . ']';
+        }
+
+        return "\n    protected \$vt = [\n" . implode(",\n", $lines) . ",\n    ];";
+    }
+
+    /**
+     * 单引号字符串转义
+     */
+    private function escapeSingleQuoted(string $value): string
+    {
+        return str_replace(["\\", "'"], ["\\\\", "\\'"], $value);
     }
 
     /**

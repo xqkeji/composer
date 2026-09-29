@@ -16,12 +16,12 @@ class ActionCommand extends BaseCommand
     use ConfirmTrait;
 
     /**
-     * 预定义动作列表（继承 xqkeji/mvc/action/ 下的动作类）
+     * 预定义动作列表（统一小写；生成类继承 xqkeji/mvc/action/ 下对应的大驼峰基类）
      */
     private const PREDEFINED_ACTIONS = [
-        'Add', 'Admin', 'Captcha', 'Change', 'Delete', 'Display',
-        'Edit', 'Emailcode', 'Export', 'Getoption', 'Login', 'Logout',
-        'Publish', 'Reg', 'Reset', 'Submenu', 'Subnode',
+        'add', 'admin', 'captcha', 'change', 'delete', 'display',
+        'edit', 'emailcode', 'export', 'getoption', 'login', 'logout',
+        'publish', 'reg', 'reset', 'submenu', 'subnode',
         'b_close', 'b_delete', 'b_open', 'b_order',
         'change_password', 'update_config', 'update_statics',
     ];
@@ -30,7 +30,7 @@ class ActionCommand extends BaseCommand
     {
         $this->setName('xqkeji:action')
             ->setDescription('创建动作类')
-            ->addArgument('name', InputArgument::REQUIRED, '动作名（如 Add、b_close、change_password）')
+            ->addArgument('name', InputArgument::REQUIRED, '动作名（统一小写，如 add、b_close、change_password）')
             ->addOption('title', 't', InputOption::VALUE_REQUIRED, '动作中文名称（写入语言文件，如：批量删除）')
             ->setHelp(<<<'EOF'
 创建动作类文件
@@ -42,12 +42,12 @@ class ActionCommand extends BaseCommand
   composer xqkeji:use user_type -c
 
   <comment># 在当前控制器下创建预定义动作（自动继承对应基类）</comment>
-  composer xqkeji:action Add
-  composer xqkeji:action Delete
+  composer xqkeji:action add
+  composer xqkeji:action delete
   composer xqkeji:action b_close
 
-  <comment># 创建 Admin 动作：交互式设置默认排序 $order（如 ordernum + asc → protected $order = ['ordernum' => 'asc'];）与默认查询条件 $conditions（如 pos_id = 4 → protected $conditions = [['pos_id', '=', 4]];）</comment>
-  composer xqkeji:action Admin
+  <comment># 创建 admin 动作：交互式设置默认排序 $order（如 ordernum + asc → protected $order = ['ordernum' => 'asc'];）与默认查询条件 $conditions（如 pos_id = 4 → protected $conditions = [['pos_id', '=', 4]];）</comment>
+  composer xqkeji:action admin
 
   <comment># 指定中文名称，写入 lang/zh_cn.php（四种写法等价）</comment>
   composer xqkeji:action b_close -t 批量关闭
@@ -59,20 +59,21 @@ class ActionCommand extends BaseCommand
 
   <comment>-t, --title=TITLE</comment>  动作中文名称，写入语言文件的 title/success/failed/auth 键
 
-<info>预定义动作列表及中文名：</info>
+<info>预定义动作列表及中文名（统一小写）：</info>
 
-  Add 添加, Admin 管理, Captcha 验证码, Change 修改, Delete 删除, Display 查看,
-  Edit 编辑, Emailcode 邮箱验证码, Export 导出, Getoption 获取选项, Login 登录,
-  Logout 退出登录, Publish 发布, Reg 注册, Reset 重置, Submenu 子菜单,
-  Subnode 子节点, b_close 批量禁用, b_delete 批量删除, b_open 批量启用,
+  add 添加, admin 管理, captcha 验证码, change 修改, delete 删除, display 查看,
+  edit 编辑, emailcode 邮箱验证码, export 导出, getoption 获取选项, login 登录,
+  logout 退出登录, publish 发布, reg 注册, reset 重置, submenu 子菜单,
+  subnode 子节点, b_close 批量禁用, b_delete 批量删除, b_open 批量启用,
   b_order 批量排序, change_password 修改密码, update_config 更新配置,
   update_statics 更新静态文件
 
 <info>说明：</info>
 
   - 动作创建在当前上下文指定的控制器下进行，请先使用 xqkeji:use -c 切换控制器
-  - Admin 动作创建时会交互式询问【默认排序 \$order】：逐个输入排序字段名（如 ordernum，留空跳过）与该字段的排序方式（asc / desc，默认 asc），可继续添加多个字段（覆盖同名重复设置）；有设置则在类体写入 protected \$order = ['字段' => 'asc|desc', ...];，未设置则不写入该属性；非交互模式直接跳过
-  - Admin 动作还会交互式询问【默认查询条件 \$conditions】：逐个输入三元组——字段名（如 pos_id，留空跳过）、操作符（= / <> / > / >= / < / <= / like / regex，默认 =）、值（纯数字按数字写入，其余按字符串写入），可继续添加多个条件；有设置则在类体写入 protected \$conditions = [['字段', '操作符', 值], ...];（如 [['pos_id', '=', 4], ['status', '=', 1]]），未设置则不写入该属性；非交互模式直接跳过
+  - 预定义动作名统一用小写（大小写不敏感，add / Add / ADD 等价），写入语言文件与 acl 的动作键同样为小写；生成的动作类文件仍为大驼峰（add → Add.php，b_close → b/Close.php），因为继承的基类是大驼峰类名（xqkeji\mvc\action\Add、xqkeji\mvc\action\b\Close）
+  - admin 动作创建时会交互式询问【默认排序 \$order】：逐个输入排序字段名（如 ordernum，留空跳过）与该字段的排序方式（asc / desc，默认 asc），可继续添加多个字段（覆盖同名重复设置）；有设置则在类体写入 protected \$order = ['字段' => 'asc|desc', ...];，未设置则不写入该属性；非交互模式直接跳过
+  - admin 动作还会交互式询问【默认查询条件 \$conditions】：逐个输入三元组——字段名（如 pos_id，留空跳过）、操作符（= / <> / > / >= / < / <= / like / regex，默认 =）、值（纯数字按数字写入，其余按字符串写入），可继续添加多个条件；有设置则在类体写入 protected \$conditions = [['字段', '操作符', 值], ...];（如 [['pos_id', '=', 4], ['status', '=', 1]]），未设置则不写入该属性；非交互模式直接跳过
   - 预定义动作继承 xqkeji\mvc\action\ 下对应的动作基类，生成空类体（行为完全由基类提供，无需重写 run()）
   - 其他动作名继承 xqkeji\mvc\Action 基类，需自行实现 run() 方法
   - 动作名含 _ 或 - 时，第一部分变为子目录名，其余转为大驼峰作为类名
@@ -116,6 +117,13 @@ EOF
         }
 
         // 解析动作名：含 _ 或 - 时，第一部分为子目录，其余转大驼峰为类名
+        // 预定义动作名统一按小写匹配（add / Add / ADD 等价），并把动作名规范为小写用于类名推导与语言键；
+        // 自定义动作保持原始输入，避免改变既有的大驼峰命名习惯
+        $isPredefined = in_array(strtolower($actionName), self::PREDEFINED_ACTIONS, true);
+        if ($isPredefined) {
+            $actionName = strtolower($actionName);
+        }
+
         $parts = preg_split('/[_\-]/', $actionName);
         if (count($parts) > 1) {
             $subDir = $parts[0];
@@ -124,9 +132,6 @@ EOF
             $subDir = null;
             $className = $this->toCamelCase($actionName);
         }
-
-        // 判断是否为预定义动作
-        $isPredefined = in_array($actionName, self::PREDEFINED_ACTIONS, true);
 
         // 构建命名空间和文件路径
         if ($subDir !== null) {

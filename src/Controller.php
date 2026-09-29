@@ -300,6 +300,98 @@ PHP;
     }
 
     /**
+     * 为【已存在】的控制器补充动作：acl.php 现有动作列表取并集写回，并补 zh_cn.php 文案，
+     * 不改动菜单配置、不覆盖已有动作与已有文案。
+     *
+     * 供 xqkeji:table --foot 使用：底部按钮的 name 就是控制器动作，acl.php 不放行前端调用不到。
+     * acl.php 中找不到该控制器时，按默认入口 admin/auth 写入动作列表。
+     *
+     * @param string $modulePath   模块路径
+     * @param string $configName   控制器小写下划线名（acl/menu 键）
+     * @param array  $actions      要补充的动作名列表（小写）
+     * @param string $controllerTitle 控制器中文名（为 null 时尝试从 lang 读取，读不到用类名）
+     */
+    public function mergeControllerActions(string $modulePath, string $configName, array $actions, ?string $controllerTitle = null): void
+    {
+        $actions = array_values(array_unique(array_filter(array_map(
+            static fn($a): string => strtolower(trim((string) $a)),
+            $actions
+        ))));
+        if (empty($actions)) {
+            return;
+        }
+
+        $aclFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'acl.php';
+        $entry = 'admin';
+        $authType = 'auth';
+        $existing = [];
+
+        if (is_file($aclFile)) {
+            $aclConfig = include $aclFile;
+            $located = is_array($aclConfig) ? $this->locateAclController($aclConfig, $configName) : null;
+            if ($located !== null) {
+                $existing = $located['actions'];
+                // 三层结构（入口/类型/控制器）沿用原位置写回；
+                // 两层结构仅 guest 入口能被 updateAclConfig 正确表达，其它形态不改动 acl
+                if ($located['type'] === null && $located['entry'] !== 'guest') {
+                    $this->io->write("<comment>⚠ acl.php 里控制器 '{$configName}' 的结构无法识别（期望 入口/类型/控制器），已跳过 acl 写入，请手动补充动作：" . implode(', ', $actions) . "</comment>");
+                    $this->writeFootActionLang($modulePath, $configName, $actions, $controllerTitle);
+                    return;
+                }
+                $entry = $located['entry'];
+                $authType = $located['type'] ?? 'auth';
+            }
+        } else {
+            $this->io->write("<comment>⚠ ACL 配置文件不存在: $aclFile</comment>");
+        }
+
+        $missing = array_values(array_diff($actions, $existing));
+        if (!empty($missing)) {
+            $this->updateAclConfig($modulePath, $entry, $configName, array_merge($existing, $actions), $authType);
+            $this->io->write("<info>✓ acl.php 为控制器 '{$configName}' 补充动作：" . implode(', ', $missing) . "</info>");
+        } else {
+            $this->io->write("<comment>⊘ 按钮动作已存在于 acl.php 的 '{$configName}'，无需改动</comment>");
+        }
+
+        $this->writeFootActionLang($modulePath, $configName, $actions, $controllerTitle);
+    }
+
+    /**
+     * 写入按钮动作的中文文案（Lang::writeActions 只在键缺失时赋值，不会覆盖已有自定义文案）
+     */
+    private function writeFootActionLang(string $modulePath, string $configName, array $actions, ?string $controllerTitle): void
+    {
+        if ($controllerTitle === null || $controllerTitle === '') {
+            $controllerTitle = Lang::readControllerTitle($modulePath, $this->context->getCurrentModule() ?? '', $configName);
+        }
+        Lang::writeActions($this->io, $modulePath, (string) $this->context->getCurrentModule(), $configName, $actions, $controllerTitle);
+    }
+
+    /**
+     * 在 acl 配置数组里定位控制器现有的动作列表。
+     *
+     * 兼容两种形态：['入口']['类型']['控制器'] = [...]（admin/auth、admin/login）
+     * 与 ['入口']['控制器'] = [...]（guest 入口）。返回 null 表示 acl 里没有该控制器。
+     */
+    private function locateAclController(array $aclConfig, string $configName): ?array
+    {
+        foreach ($aclConfig as $entry => $entryValue) {
+            if (!is_array($entryValue)) {
+                continue;
+            }
+            foreach ($entryValue as $key => $value) {
+                if (is_array($value) && isset($value[$configName]) && is_array($value[$configName])) {
+                    return ['entry' => (string) $entry, 'type' => (string) $key, 'actions' => array_values($value[$configName])];
+                }
+                if (is_array($value) && (string) $key === $configName) {
+                    return ['entry' => (string) $entry, 'type' => null, 'actions' => array_values($value)];
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 菜单分组的默认标题
      */
     private function getMenuGroupTitle(string $groupKey): string

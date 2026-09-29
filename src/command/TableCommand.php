@@ -25,6 +25,7 @@ class TableCommand extends BaseCommand
             ->addOption('controller-file', 'f', InputOption::VALUE_NONE, '生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件')
             ->addOption('no-form', 'F', InputOption::VALUE_NONE, '创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单）')
             ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表格交互式追加列元素：先列出现有列，选择插入位置（某列之后/最前面），新元素按 xqkeji:element 流程创建')
+            ->addOption('foot', null, InputOption::VALUE_OPTIONAL, '表格底部操作栏按钮：值为逗号分隔的动作名（如 --foot=add,b_delete,export，动作名统一小写，b_ 前缀按批量按钮 xq-batch，add/export 用各自行为类）；只带 --foot 不带值则交互式逐个录入。会为本表生成模块本地 foot 元素类 table/element/Foot{表}.php（base 的 Foot→Toolbar→AddDelete 三级内联为单文件）并把表格 \$foot 改为 \'~Foot{表}\'，按钮的 name 即控制器动作、自动并入 acl.php 与 zh_cn.php；对【已存在】的表格只把缺失的按钮插入其 foot 文件（幂等，不覆盖手工内容），树表不支持该参数')
             ->setHelp(<<<'EOF'
 创建表格类和表格元素
 
@@ -76,6 +77,17 @@ class TableCommand extends BaseCommand
   composer xqkeji:table User -a
   composer xqkeji:table User --add
 
+  <comment># 建表时指定底部操作栏按钮（按钮 name 即控制器动作，自动并入 acl.php 与 zh_cn.php）</comment>
+  composer xqkeji:table course -e id,name,select_dept,edit_delete --foot=add,b_delete,export
+  <comment>#   → 生成模块本地 table/element/FootCourse.php（base 的 Foot→Toolbar→AddDelete 三级内联成一个文件），表格 \$foot = '~FootCourse'</comment>
+
+  <comment># 给【已存在】的表格加按钮：只把缺失的按钮插入该表自己的 foot 文件，base 与其余手工内容都不动</comment>
+  composer xqkeji:table course --foot=export
+  composer xqkeji:table course --foot=b_close   <comment># 未收录的自定义动作会询问按钮文案与前端行为类</comment>
+
+  <comment># --foot 不带值：交互式循环逐个录入按钮动作（留空结束）</comment>
+  composer xqkeji:table course --foot
+
 <info>说明：</info>
 
   - 表格名支持大小写，自动转为大驼峰（如 user → User、user_list → UserList）
@@ -89,6 +101,7 @@ class TableCommand extends BaseCommand
   - 如果元素在 base 模块已存在，使用 @ElementName 引入
   - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
   - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
+  - select_ 前缀列约定（与表单侧对称）：-e 列名转蛇形后以 select_ 开头（如 select_dept / SelectDept）时，免选类型、不询问中文名，直接生成继承 xqkeji\form\element\ListSelectModel 的【空子类】（无 \$name/\$text/\$attrs 属性，行为由基类提供），表格中以 ~SelectDept 引用；-a 追加 select_ 列同样适用
   - 使用 -T/--tree 创建树形表格（继承 TreegridTable），不使用则继承 Table
   - 使用 -D/--drag 创建可拖动排序的普通表格：仍继承 Table，仅在表格类中额外生成 protected \$isDrag = true;
   - 自动等效 -D：创建时未传 -D，只要 -e 最终列中含有名称 ordernum 的元素（如 @Ordernum / ~OrdernumXxx），即自动按拖动排序表格处理（表格类同样写入 protected \$isDrag = true;，与下方 b_order/Admin.php 链路同开同关），无需再补传 -D 设置一次
@@ -104,6 +117,11 @@ class TableCommand extends BaseCommand
   - 【默认】建表格时会用 -e 传入的表格列自动派生并创建一个同名表单（form/{大驼峰}.php 及所需 form/element/）：从表格列中剔除“仅表格”元素 id、create_time、create_date、update_time、update_date、edit_delete、delete、view_delete（按蛇形名匹配），剩余列作为表单元素，末尾追加 submit_reset（base 模块的提交/重置按钮，引用为 @SubmitReset）；表单与表格同名并共享控制器与中文名，元素中文名在建表时已写入 lang，建表单过程一般不再重复询问；select_ 前缀列照常生成 SelectModel 子类
   - 使用 -F/--no-form 关闭上述自动建表单行为，仅创建表格；当 -e 未传列、或表格列全部是“仅表格”元素时，本就不会生成表单（无可用表单列）；-N（仅建表不建控制器）不影响该自动建表单逻辑，如需两者都跳过可同时使用 -N -F
   - 控制器默认使用【虚拟控制器】：普通表格不会生成 controller/{Class}.php 实体文件，仅初始化 acl.php/menu.php/zh_cn.php；只要 acl.php 里有该控制器与动作的定义，框架即按约定解析动作、控制器即“存在”。需要实体文件时加 -f/--controller-file（等价 xqkeji:controller 的 -f/--file 语义）；该参数仅对普通表格生效，树状表格仍会复制 controller/{表名}/ 下的动作类文件（admin/add/move 等）
+  - 使用 --foot=add,b_delete,export 定制本表【底部操作栏按钮】：动作名统一小写（与 xqkeji:action 一致），按钮的 name 就是控制器动作（前端 xq-batch 会把选中行 POST 到 …/{controller}/{name}），因此生成器会自动把动作并入 acl.php 并在 zh_cn.php 补 title/success/failed/auth 文案。内置词表默认文案与样式：add 添加(btn-primary xq-add)、b_delete 删除(btn-danger xq-batch)、b_open 启用(btn-success xq-batch)、b_close 禁用(btn-secondary xq-batch)、b_order 排序(btn-info xq-batch)、export 导出(btn-warning xq-export)；未收录的动作名会询问【按钮文案】与【前端行为类】（非交互按 动作名 + xq-batch 处理）
+  - --foot 的落地方式（这是它解决的核心问题）：不再修改 base 模块的 Foot→Toolbar→AddDelete 三个共享文件（改一次全站表格生效、且 composer update 会丢），而是为这张表生成【模块本地】的 table/element/Foot{表名大驼峰}.php，把三级结构内联进单个文件（tfoot → @CheckAll + 内联 \$ListItem(td, colspan 99) → 内联 \$TableDiv(d-flex) → 内联 \$TableDiv(me-auto) 按钮组 + @Pager + @PageSize），表格类 \$foot 改为 '~Foot{表名}'，元素 \$name 用 list_foot_{模块}_{表名蛇形}。此后这张表加/减按钮只动这一个文件
+  - 【已存在】的表格执行 --foot：不新建表格，只把缺失的按钮条目以文本方式插入其 foot 文件的按钮容器（沿用最后一条按钮的缩进，同名 name 已存在则跳过、文件其余内容与手工编辑原样保留）；若该表 \$foot 还指向 '@Foot'（base 共享 foot），会先生成 '~Foot{表名}' 专属文件再插入。此时按钮不再继承 base foot 里的其它按钮，需要就一并写进 --foot 列表
+  - --foot 不带值（如 composer xqkeji:table course --foot）进入交互式循环录入按钮动作（每次问一个动作名，留空结束）；--no-interaction 下必须给出 --foot=动作列表；树状表格（-T）的 foot 由内置 tree 模板生成，--foot 会提示并跳过；-N（仅建表格）时不写 acl/lang，只生成 foot 文件
+  - 与 -a 的区别：-a 追加的是【列】（表格 \$el 里的列元素），--foot 维护的是【底部操作栏按钮】；两者都只动当前模块自己的文件，不碰 base
 
 EOF
             );
@@ -143,18 +161,46 @@ EOF
             $elements = $this->collectElementsLoop($this->getIO(), '列元素');
         }
 
+        $withController = !$input->getOption('no-controller');
+        $withForm = !$input->getOption('no-form');
+        $controllerFile = $input->getOption('controller-file');
+
+        // --foot 底部按钮：带值 = 动作列表；只带 --foot 不带值 = 交互循环录入；完全没提 = null（不处理）
+        $footRaw = $input->getOption('foot');
+        $footArg = null;
+        if (is_string($footRaw) && trim($footRaw) !== '') {
+            $footArg = trim($footRaw);
+        } elseif ($this->hasBareFootOption()) {
+            $footArg = '';
+        }
+
         // -D 且表格类已存在：不新建表格，只为已有表格类补写 protected $isDrag = true;（幂等）
         if ($isDrag && !$isTree && $table->enableDrag($name)) {
             return 0;
         }
 
-        $withController = !$input->getOption('no-controller');
-        $withForm = !$input->getOption('no-form');
-        $controllerFile = $input->getOption('controller-file');
+        // --foot 且表格类已存在：不新建表格，只为该表格维护底部操作栏按钮（幂等插入）
+        if ($footArg !== null && !$isTree && $table->applyFoot($name, $footArg, $withController)) {
+            return 0;
+        }
 
-        $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag, $withForm, $controllerFile);
+        $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag, $withForm, $controllerFile, $footArg);
         
         return 0;
+    }
+
+    /**
+     * 命令行里是否出现了不带值的 --foot（直接扫描原始 argv，不依赖 Symfony 版本对
+     * hasParameterOption('--foot') 是否匹配 '--foot=值' 的实现差异）
+     */
+    private function hasBareFootOption(): bool
+    {
+        foreach ((array) ($_SERVER['argv'] ?? []) as $token) {
+            if ($token === '--foot' || $token === '--foot=') {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -36,6 +36,22 @@ class Table
         'export'   => ['导出', 'warning', 'xq-export'],
     ];
 
+    /**
+     * base 模块已有的按钮元素（ListFoot 新结构里 \$buttons 直接引用，不再内联按钮数组）。
+     *
+     * 未收录的动作（b_open / b_close / 自定义动作等）仍在 \$buttons 里内联 '\$Button' 数组条目。
+     * 注意：base 的 EditButton / ViewButton / DeleteButton 是【操作列】的小按钮（btn-sm），
+     * 不适用于底栏，故这里只映射底栏用得到的三个 me-1 大按钮。
+     */
+    private const FOOT_BASE_BUTTONS = [
+        'add'      => '@AddButton',
+        'b_delete' => '@BDeleteButton',
+        'export'   => '@ExportButton',
+    ];
+
+    /** base 里属于【操作列】的 btn-sm 小按钮（~EditDelete 用）：--foot 写了这些名字直接报错，不进底栏 */
+    private const FOOT_COLUMN_BUTTONS = ['EditButton', 'ViewButton', 'DeleteButton'];
+
     /** 前端按钮行为类候选（--foot 自定义动作时交互选择） */
     private const FOOT_BEHAVIORS = ['xq-batch', 'xq-add', 'xq-edit', 'xq-view', 'xq-delete', 'xq-copy', 'xq-export', ''];
 
@@ -58,11 +74,12 @@ class Table
      * @param bool $controllerFile 普通表格是否生成控制器实体文件 controller/{Class}.php；默认 false=虚拟控制器
      *                             （只初始化 acl/menu/lang，不落地文件）。仅作用于普通表格，树表始终复制动作类文件。
      * @param string|null $footArg 底部操作栏按钮（--foot）：null=不处理；''=交互循环录入；其余=逗号分隔的动作列表。
-     *                             给出按钮时会为本表生成模块本地 foot 元素类 table/element/Foot{表}.php（整条
-     *                             Foot→Toolbar→AddDelete 链内联进单文件），并把表格 \$foot 改为 '~Foot{表}'，
+     *                             给出按钮时会为本表生成模块本地 foot 元素类 table/element/Foot{表}.php（继承 ListFoot、
+     *                             只声明 \$buttons），并把表格 \$foot 改为 '~Foot{表}'，
      *                             从此这张表的按钮只在自己的文件里维护，不再动 base。
+     * @param array{check_all?:bool,pager?:bool} $footOpts --no-check-all / --no-pager：false 时 foot 类补写空数组属性关掉全选框/分页条。
      */
-    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false, bool $withForm = true, bool $controllerFile = false, ?string $footArg = null): void
+    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false, bool $withForm = true, bool $controllerFile = false, ?string $footArg = null, array $footOpts = []): void
     {
         // 验证表格名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
@@ -117,7 +134,7 @@ class Table
             // 不存在则交互询问并去重写入 lang；用于替换树元素模板中的中文名占位符
             $tableCn = $this->resolveTreeTableCn($modulePath, $currentModule, $tableName, $className, $withController);
             // 复制并改名 tree 元素到模块 table/element/（不带 tree 子目录），元素中文名随表格中文名更新
-            $this->ensureTreeElements($modulePath, $currentModule, $tableName, $className, $configName, $tableCn);
+            $this->ensureTreeElements($modulePath, $currentModule, $className, $configName, $tableCn);
             // 树状表格默认元素（@Id / ~Name{表} / @Status / ~EditDelete{表}），忽略命令行传入的 elements
             $elementRefs = [
                 '@Id',
@@ -235,7 +252,7 @@ class Table
             }
         }
 
-        // 底部操作栏按钮（--foot）：为本表生成模块本地 foot 元素类（单文件内联整条按钮链），
+        // 底部操作栏按钮（--foot）：为本表生成模块本地 foot 元素类（继承 ListFoot，只声明 \$buttons），
         // 表格 \$foot 改用 '~Foot{表}'；按钮动作稍后并入控制器动作集（acl/lang）
         if ($isTree && $footArg !== null) {
             $this->io->write("<comment>⊘ 树状表格的 foot 由内置 tree 模板生成，--foot 仅适用于普通表格，已忽略</comment>");
@@ -244,7 +261,7 @@ class Table
         $footRef = null;
         $footButtons = $footArg === null ? [] : $this->resolveFootButtons($footArg);
         if (!empty($footButtons)) {
-            $footRef = $this->createFootElement($modulePath, $currentModule, $className, $configName, $footButtons);
+            $footRef = $this->createFootElement($modulePath, $currentModule, $className, $footButtons, $footOpts);
         }
 
         // 创建表格类
@@ -548,12 +565,14 @@ class Table
      * 底部操作栏按钮（--foot）：为【已存在】的表格追加按钮。
      *
      * 表格类不存在时返回 false（调用方继续走建表流程）；存在则返回 true 并处理完成。
-     * 本表专属 foot 类（table/element/Foot{表}.php）不存在 → 新建单文件内联 foot
-     * （把 base 的 Foot→Toolbar→AddDelete 三级压成一个文件）；已存在 → 只把缺失的按钮条目
-     * 文本插入到按钮容器（保留文件其余内容与手工编辑）。按钮 name 即控制器动作，
-     * 故同步把动作并入 acl.php 与 zh_cn.php。树表的 foot 由内置 tree 模板生成，不适用。
+     * 本表专属 foot 类（table/element/Foot{表}.php）不存在 → 新建（继承 ListFoot，只声明 \$buttons）；
+     * 已存在 → 只把缺失的按钮条目文本插入其 \$buttons 数组（保留文件其余内容与手工编辑），
+     * 并按 --no-check-all / --no-pager 补写或改写 \$checkAll / \$pager 空数组。
+     * 按钮 name 即控制器动作，故同步把动作并入 acl.php 与 zh_cn.php。树表的 foot 由内置 tree 模板生成，不适用。
+     *
+     * @param array{check_all?:bool,pager?:bool} $footOpts false 表示关掉全选框 / 分页条
      */
-    public function applyFoot(string $tableName, ?string $footArg, bool $withController = true): bool
+    public function applyFoot(string $tableName, ?string $footArg, bool $withController = true, array $footOpts = []): bool
     {
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
             $this->io->write('<error>表格名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
@@ -577,18 +596,14 @@ class Table
             return false;
         }
 
-        $tableContent = (string) file_get_contents($tableFile);
-        if (preg_match('/class\s+\w+\s+extends\s+TreegridTable/', $tableContent)) {
+        $content = (string) file_get_contents($tableFile);
+        if (preg_match('/class\s+\w+\s+extends\s+TreegridTable/', $content)) {
             $this->io->write("<comment>⊘ 表格 {$className} 为树状表格，foot 由内置 tree 模板生成，--foot 已忽略</comment>");
             return true;
         }
 
         $buttons = $this->resolveFootButtons($footArg);
-        if (empty($buttons)) {
-            return true;
-        }
 
-        $configName = $this->toSnakeCase($currentModule) . '_' . $this->toSnakeCase($tableName);
         $elementDir = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
         if (!is_dir($elementDir)) {
             mkdir($elementDir, 0755, true);
@@ -597,8 +612,13 @@ class Table
         $footFile = $elementDir . DIRECTORY_SEPARATOR . $footClass . '.php';
 
         $forAcl = [];
-        if (!is_file($footFile)) {
-            $ref = $this->createFootElement($modulePath, $currentModule, $className, $configName, $buttons);
+        if (empty($buttons)) {
+            if (!is_file($footFile)) {
+                $this->io->write("<comment>⊘ 未选择任何按钮，且本表还没有专属 foot 文件，未做改动</comment>");
+                return true;
+            }
+        } elseif (!is_file($footFile)) {
+            $ref = $this->createFootElement($modulePath, $currentModule, $className, $buttons, $footOpts);
             if ($ref === null) {
                 return true;
             }
@@ -608,17 +628,18 @@ class Table
             if ($oldRef !== null && $oldRef !== $ref) {
                 $this->io->write("<comment>⚠ 本表 \$foot 由 '{$oldRef}' 改为 '{$ref}'：{$oldRef} 里的其它按钮不会再出现在这张表上（需要就一并写进 --foot）</comment>");
             }
-        } else {
-            $target = $this->locateFootButtonFile($footFile, $elementDir);
-            if ($target === null) {
-                $this->io->write("<error>无法在 {$footFile} 及其 ~ 引用元素里找到内联按钮（'\$Button'）：请在该 foot 文件内联按钮结构后再用 --foot 维护</error>");
-                return true;
-            }
-            $forAcl = $this->insertFootButtons($target, $buttons);
+        } elseif ($this->footButtonsRange((string) file_get_contents($footFile)) !== null) {
+            $forAcl = $this->insertFootButtons($footFile, $buttons);
             if (empty($forAcl)) {
-                $this->io->write("<comment>⊘ 请求的按钮已全部存在于 " . basename($target) . '，未做改动</comment>');
+                $this->io->write("<comment>⊘ 请求的按钮已全部存在于 " . basename($footFile) . '，未做改动</comment>');
             }
+        } else {
+            // 1.1.53 及更早的内联三级结构：没有 $buttons，按本次列表整体重写为新结构
+            $forAcl = $this->rewriteLegacyFoot($footFile, $currentModule, $footClass, $buttons, $footOpts);
         }
+
+        // 关掉全选框 / 分页条：对已存在的 foot 文件补写或改写 \$checkAll / \$pager（新建时模板已写好，这里幂等）
+        $this->applyFootFlags($footFile, $footOpts);
 
         // 表格 \$foot 指向本表专属 foot 类
         $this->rewriteFootProperty($tableFile, '~' . $footClass);
@@ -678,10 +699,24 @@ class Table
 
         $buttons = [];
         $seen = [];
+        // base 按钮元素名 → 动作名（--foot=AddButton,BDeleteButton 等价于 --foot=add,b_delete）
+        $actionByButtonClass = [];
+        foreach (self::FOOT_BASE_BUTTONS as $act => $ref) {
+            $actionByButtonClass[strtolower(ltrim($ref, '@'))] = $act;
+        }
+        foreach (self::FOOT_COLUMN_BUTTONS as $cls) {
+            $actionByButtonClass[strtolower($cls)] = false; // 操作列小按钮，明确拒绝
+        }
+
         foreach ($raw as $name) {
-            $action = strtolower(str_replace('-', '_', $name));
+            $key = strtolower(ltrim(trim($name), '@'));
+            if (($actionByButtonClass[$key] ?? null) === false) {
+                $this->io->write("<error>'{$name}' 是操作列的 btn-sm 小按钮（~EditDelete 用），不能放进底部操作栏；请写 add / b_delete / export 等动作名</error>");
+                continue;
+            }
+            $action = $actionByButtonClass[$key] ?? strtolower(str_replace('-', '_', $name));
             if (!preg_match('/^[a-z][a-z0-9_]*$/', $action)) {
-                $this->io->write("<error>按钮动作名无效：\"{$name}\"（只能为小写字母/数字/下划线且字母开头，如 add、b_close、audit）已忽略</error>");
+                $this->io->write("<error>按钮动作名无效：\"{$name}\"（只能为小写字母/数字/下划线且字母开头，如 add、b_close、audit，或直接写 base 按钮元素名 @AddButton）已忽略</error>");
                 continue;
             }
             if (isset($seen[$action])) {
@@ -704,12 +739,20 @@ class Table
 
     /**
      * 单个按钮规格：内置词表优先，自定义动作交互补文案与行为类。
+     *
+     * 'ref' 非空表示该动作在 base 已有按钮元素（如 @AddButton），\$buttons 里直接引用、不再内联数组。
      */
     private function buildFootButton(string $action): array
     {
         $known = self::FOOT_BUTTONS[$action] ?? null;
         if ($known !== null) {
-            return ['action' => $action, 'value' => $known[0], 'btn' => $known[1], 'js' => $known[2]];
+            return [
+                'action' => $action,
+                'value' => $known[0],
+                'btn' => $known[1],
+                'js' => $known[2],
+                'ref' => self::FOOT_BASE_BUTTONS[$action] ?? null,
+            ];
         }
 
         $defaultLabel = Lang::ACTION_TITLES[$action] ?? $action;
@@ -735,14 +778,20 @@ class Table
             $this->io->write("<comment>非交互模式：自定义按钮 '{$action}' 采用默认文案 '{$label}' 与行为 '{$js}'</comment>");
         }
 
-        return ['action' => $action, 'value' => $label, 'btn' => 'primary', 'js' => $js];
+        return ['action' => $action, 'value' => $label, 'btn' => 'primary', 'js' => $js, 'ref' => null];
     }
 
     /**
-     * 渲染单个按钮数组条目（不含结尾逗号）。
+     * 渲染 \$buttons 里的单个条目（不含结尾逗号）。
+     *
+     * base 已有按钮元素 → 一行引用（'@AddButton'）；否则内联 '\$Button' 数组（文案与行为类由词表/交互决定）。
      */
     private static function renderFootButtonEntry(array $button, string $indent): string
     {
+        if (!empty($button['ref'])) {
+            return $indent . "'" . $button['ref'] . "'";
+        }
+
         $inner = $indent . '    ';
         $class = trim('btn btn-' . $button['btn'] . ' me-1 ' . $button['js']);
         return $indent . "[\n"
@@ -756,10 +805,12 @@ class Table
     }
 
     /**
-     * 生成本表专属 foot 元素类（单文件内联 base 的 Foot→Toolbar→AddDelete 三级结构），
-     * 返回其在表格 \$el / \$foot 中的引用（~Foot{表}）。已存在则跳过创建并返回引用。
+     * 生成本表专属 foot 元素类（继承 ListFoot，只声明 \$buttons / \$checkAll / \$pager），
+     * 返回其在表格 \$foot 中的引用（~Foot{表}）。已存在则跳过创建并返回引用。
+     *
+     * @param array{check_all?:bool,pager?:bool} $footOpts false 表示关掉全选框 / 分页条
      */
-    private function createFootElement(string $modulePath, string $currentModule, string $className, string $configName, array $buttons): ?string
+    private function createFootElement(string $modulePath, string $currentModule, string $className, array $buttons, array $footOpts = []): ?string
     {
         $footClass = 'Foot' . $className;
         $elementDir = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
@@ -774,30 +825,40 @@ class Table
             return '~' . $footClass;
         }
 
-        $content = $this->generateFootContent($currentModule, $footClass, 'list_foot_' . $configName, $buttons);
+        $content = $this->generateFootContent($currentModule, $footClass, $buttons, $footOpts);
         if (file_put_contents($footFile, $content) === false) {
             $this->io->write("<error>写入表格 foot 元素失败: {$footFile}</error>");
             return null;
         }
-        $this->io->write("<info>✓ 已创建本表专属底部操作栏元素（按钮内联在单文件，不再依赖 base 的 Foot/Toolbar/AddDelete）: {$footFile}</info>");
+        $this->io->write("<info>✓ 已创建本表专属底部操作栏元素（只声明 \$buttons，壳结构由 ListFoot 渲染）: {$footFile}</info>");
         return '~' . $footClass;
     }
 
     /**
-     * foot 元素类内容：tfoot → @CheckAll + 内联 \$ListItem(td, colspan 99) → 内联 \$TableDiv(d-flex)
-     * → 内联 \$TableDiv(me-auto，按钮组) + @Pager + @PageSize。
+     * foot 元素类内容（与 base 的 Foot / FootExport / FootOnlyDelete 同构）：
+     * ListFoot 自己渲染 tfoot → 全选 td → d-flex 容器 → me-auto 按钮组 → 分页条，
+     * 子类只需给出 \$buttons（全选/分页要关掉时才补 \$checkAll / \$pager 空数组）。
      *
-     * 结构照抄 base 已验证写法（Foot / Toolbar / AddDelete 与 FootOnlyDelete 的内联 \$ListItem 用法）；
      * 按 xq-admin-page.js 的约定，按钮 name 就是提交的控制器动作（批量按钮 POST 选中行到 …/{name}）。
+     *
+     * @param array{check_all?:bool,pager?:bool} $footOpts
+     * @param string $name foot 元素的 \$name（base 各 foot 都用 'list_foot'；迁移旧文件时沿用原值）
      */
-    private function generateFootContent(string $currentModule, string $footClass, string $footName, array $buttons): string
+    private function generateFootContent(string $currentModule, string $footClass, array $buttons, array $footOpts = [], string $name = 'list_foot'): string
     {
-        $pad = str_repeat(' ', 32);
-        $lines = '';
+        $entries = '';
         foreach ($buttons as $b) {
-            $lines .= self::renderFootButtonEntry($b, $pad) . ",\n";
+            $entries .= self::renderFootButtonEntry($b, '        ') . ",\n";
         }
-        $buttonsBlock = rtrim($lines, "\n");
+
+        $props = "    protected \$name = '{$name}';\n";
+        $props .= "    protected \$buttons = [\n" . $entries . "    ];\n";
+        if (array_key_exists('check_all', $footOpts) && $footOpts['check_all'] === false) {
+            $props .= "    protected \$checkAll = [];\n";
+        }
+        if (array_key_exists('pager', $footOpts) && $footOpts['pager'] === false) {
+            $props .= "    protected \$pager = [];\n";
+        }
 
         $namespace = "xqkeji\\app\\{$currentModule}\\table\\element";
 
@@ -805,43 +866,11 @@ class Table
 <?php
 namespace {$namespace};
 
-use xqkeji\\form\\element\\ListFoot;
+use xqkeji\\form\\element\\ListFoot as BaseListFoot;
 
-class {$footClass} extends ListFoot
+class {$footClass} extends BaseListFoot
 {
-    protected \$name = '{$footName}';
-    protected \$el = [
-        '@CheckAll',
-        [
-            '\$ListItem',
-            'attr_colspan' => '99',
-            'attr_style' => 'text-align:left;',
-            'el' => [
-                [
-                    '\$TableDiv',
-                    'name' => 'list-toolbar-content',
-                    'attrs' => [
-                        'class' => 'd-flex',
-                    ],
-                    'el' => [
-                        [
-                            '\$TableDiv',
-                            'name' => 'list-add-delete',
-                            'attrs' => [
-                                'class' => 'me-auto',
-                            ],
-                            'el' => [
-{$buttonsBlock}
-                            ],
-                        ],
-                        '@Pager',
-                        '@PageSize',
-                    ],
-                ],
-            ],
-        ],
-    ];
-}
+{$props}}
 
 PHP;
     }
@@ -908,84 +937,12 @@ PHP;
     }
 
     /**
-     * 在 foot 元素类及其 ~ 引用元素（如 ~ToolbarDept）中找出内联按钮所在文件；找不到返回 null。
-     *
-     * 只沿 '~'（当前模块）引用查找，绝不写回 '@'（base 模块）文件——这正是本方案要回避的改动点。
+     * 从 $open（'[' 下标）按括号深度扫描到配对的 ']'（跳过单/双引号字符串内容）；找不到返回 -1。
      */
-    private function locateFootButtonFile(string $footFile, string $elementDir): ?string
+    private static function arrayCloseIndex(string $content, int $open): int
     {
-        $queue = [$footFile];
-        $checked = [];
-        while ($queue && count($checked) < 5) {
-            $file = array_shift($queue);
-            if (isset($checked[$file]) || !is_file($file)) {
-                continue;
-            }
-            $checked[$file] = true;
-            $content = (string) file_get_contents($file);
-            if (preg_match("/'\\\$[Bb]utton'/", $content)) {
-                return $file;
-            }
-            if (preg_match_all("/'~([A-Za-z][A-Za-z0-9_]*)'/", $content, $m)) {
-                foreach ($m[1] as $name) {
-                    $queue[] = $elementDir . DIRECTORY_SEPARATOR . $name . '.php';
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 把缺失的按钮条目插入到已有 foot/工具栏文件的按钮容器（文本插入，保留文件其余内容）。
-     *
-     * 定位方式：找到最后一条 '\$Button' 条目，向前回溯其数组起始 '['，再按括号深度（跳过字符串字面量）
-     * 找到配对的 ']'，在其后插入新条目。文件里已存在同名 name 的按钮视为已添加、跳过。
-     *
-     * @return array<int, array> 实际插入的按钮规格
-     */
-    private function insertFootButtons(string $file, array $buttons): array
-    {
-        $content = (string) file_get_contents($file);
-
-        $missing = [];
-        foreach ($buttons as $b) {
-            if (preg_match("/'name'\\s*=>\\s*'{$b['action']}'/", $content)) {
-                $this->io->write("<comment>⊘ 按钮 '{$b['action']}' 已存在于 " . basename($file) . '，跳过</comment>');
-                continue;
-            }
-            $missing[] = $b;
-        }
-        if (empty($missing)) {
-            return [];
-        }
-
-        $offset = strripos($content, "'\$Button'");
-        if ($offset === false) {
-            return [];
-        }
-
-        // 回溯该条目的数组起始 '['（跳过空白、逗号与配对的 ]）
-        $i = $offset;
-        while ($i > 0 && $content[$i] !== '[') {
-            $ch = $content[$i];
-            if ($ch !== ']' && $ch !== ',' && $ch !== "\n" && $ch !== "\r" && $ch !== ' ' && $ch !== "\t") {
-                break;
-            }
-            $i--;
-        }
-        if ($content[$i] !== '[') {
-            $i = strrpos(substr($content, 0, $offset), '[');
-            if ($i === false) {
-                $this->io->write('<error>未能定位按钮条目的起始数组，请手动在 ' . basename($file) . ' 添加按钮</error>');
-                return [];
-            }
-        }
-        $open = $i;
-
-        // 从 '[' 正向按深度扫描到配对 ']'，跳过单/双引号字符串内容
         $depth = 0;
         $quote = null;
-        $close = -1;
         $len = strlen($content);
         for ($j = $open; $j < $len; $j++) {
             $ch = $content[$j];
@@ -1004,35 +961,224 @@ PHP;
             } elseif ($ch === ']') {
                 $depth--;
                 if ($depth === 0) {
-                    $close = $j;
-                    break;
+                    return $j;
                 }
             }
         }
+        return -1;
+    }
+
+    /**
+     * 定位 foot 文件里 `protected $buttons = [...]` 数组的 ['open','close'] 下标；没有该属性返回 null。
+     *
+     * 新结构下按钮就在本表的 foot 文件里（ListFoot 自己渲染 tfoot/全选/分页壳子），
+     * 所以只认 protected $buttons；旧的三级内联 foot 文件没有该属性，返回 null 由调用方报错。
+     *
+     * @return array{open:int,close:int}|null
+     */
+    private function footButtonsRange(string $content): ?array
+    {
+        $open = $this->elArrayOpen($content, 'buttons');
+        if ($open === null) {
+            return null;
+        }
+        $close = self::arrayCloseIndex($content, $open);
         if ($close < 0) {
-            $this->io->write('<error>按钮数组结构不完整（括号不配对），请手动在 ' . basename($file) . ' 添加按钮</error>');
+            return null;
+        }
+        return ['open' => $open, 'close' => $close];
+    }
+
+    /**
+     * \$buttons 条目对应的动作名：'@AddButton' 这类 base 按钮引用按词表反查，内联 '\$Button' 条目取 'name'。
+     */
+    private function footEntryAction(string $entryText): ?string
+    {
+        $ref = $this->elRefName($entryText);
+        if ($ref !== null) {
+            $action = array_search($ref, self::FOOT_BASE_BUTTONS, true);
+            return $action === false ? null : $action;
+        }
+        if (preg_match("/'name'\\s*=>\\s*'([a-z0-9_]+)'/", $entryText, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * 把缺失的按钮条目插入到本表 foot 文件的 \$buttons 数组末尾（文本插入，保留文件其余内容与手工编辑）。
+     *
+     * 已收录在 base 的动作插入为一行引用（'@AddButton'），其余插入为内联 '\$Button' 数组条目；
+     * 数组里已存在同动作的条目则跳过。缩进沿用 \$buttons 数组现有条目。
+     *
+     * @return array<int, array> 实际插入的按钮规格
+     */
+    private function insertFootButtons(string $file, array $buttons): array
+    {
+        $content = (string) file_get_contents($file);
+        $range = $this->footButtonsRange($content);
+        if ($range === null) {
+            $this->io->write("<error>" . basename($file) . " 里没有 protected \$buttons 数组（旧的内联三级结构？）：请先把它改成新结构（继承 ListFoot、只声明 \$buttons）再用 --foot 维护</error>");
             return [];
         }
 
-        // 缩进沿用最后一条按钮所在行
-        $lineStart = strrpos(substr($content, 0, $open), "\n");
-        $lineStart = $lineStart === false ? 0 : $lineStart + 1;
-        $pad = str_repeat(' ', max(0, $open - $lineStart));
+        // 现有条目已覆盖的动作
+        $existing = [];
+        $items = $this->elScanItems($content, $range['open']);
+        foreach ($items as $item) {
+            $action = $this->footEntryAction($this->elItemText($content, $item));
+            if ($action !== null) {
+                $existing[$action] = true;
+            }
+        }
+
+        $missing = [];
+        foreach ($buttons as $b) {
+            if (isset($existing[$b['action']])) {
+                $this->io->write("<comment>⊘ 按钮 '{$b['action']}' 已存在于 " . basename($file) . '，跳过</comment>');
+                continue;
+            }
+            $missing[] = $b;
+        }
+        if (empty($missing)) {
+            return [];
+        }
 
         $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
-        $append = '';
+        $closeIndent = $this->elLineIndent($content, $range['close']);
+        // 缩进沿用已有条目；空数组则按闭合缩进加一级
+        $pad = empty($items)
+            ? ($closeIndent === '' ? '        ' : $closeIndent . '    ')
+            : $this->elLineIndent($content, $items[0]['start']);
+        $block = '';
         foreach ($missing as $b) {
-            $append .= ',' . $eol . self::renderFootButtonEntry($b, $pad);
+            $block .= $eol . self::renderFootButtonEntry($b, $pad) . ',';
         }
-        $new = substr_replace($content, $append, $close + 1, 0);
+
+        if (empty($items)) {
+            // 空数组：条目插到 '[' 之后；'[' 与 ']' 之间原本没有换行（写成 []）时再补闭合行
+            $gap = substr($content, $range['open'] + 1, $range['close'] - $range['open'] - 1);
+            $tail = strpbrk($gap, "\r\n") === false ? $eol . $closeIndent : '';
+            $new = substr_replace($content, $block . $tail, $range['open'] + 1, 0);
+        } else {
+            // 插到末条目的尾随逗号之后（缺逗号先补），每条自带行首换行
+            $pos = $items[count($items) - 1]['end'];
+            $len = strlen($content);
+            while ($pos < $len && ($content[$pos] === ' ' || $content[$pos] === "\t")) {
+                $pos++;
+            }
+            if ($pos >= $len || $content[$pos] !== ',') {
+                $content = substr_replace($content, ',', $pos, 0);
+            }
+            $pos++;
+            $new = substr_replace($content, $block, $pos, 0);
+        }
+
         if (file_put_contents($file, $new) === false) {
             $this->io->write("<error>写入按钮失败: {$file}</error>");
             return [];
         }
 
         $names = array_map(static fn(array $b): string => $b['action'], $missing);
-        $this->io->write('<info>✓ 已向 ' . basename($file) . ' 追加按钮：' . implode(', ', $names) . '</info>');
+        $this->io->write('<info>✓ 已向 ' . basename($file) . " 的 \$buttons 追加按钮：" . implode(', ', $names) . '</info>');
         return $missing;
+    }
+
+    /**
+     * 迁移旧 foot 文件（1.1.53 及更早生成的内联三级结构，没有 protected \$buttons）。
+     *
+     * 这类文件没有条目可追加，故按本次 --foot 给出的【完整】按钮列表整体重写为新结构
+     * （沿用文件原有的 \$name，避免影响已生成的元素配置）。原内联结构里的手工改动
+     * （自定义 tooltip、按钮文案等）会丢失，只在提示里说明、不做静默保留。
+     * 未给出按钮列表时不动文件（新结构无从推断按钮集合）。
+     *
+     * @param array{check_all?:bool,pager?:bool} $footOpts
+     * @return array<int, array> 写入的按钮（空数组表示未改动）
+     */
+    private function rewriteLegacyFoot(string $file, string $currentModule, string $footClass, array $buttons, array $footOpts): array
+    {
+        if (empty($buttons)) {
+            $this->io->write('<error>' . basename($file) . " 是旧的内联三级结构（没有 protected \$buttons）：请用 --foot=完整按钮列表 说明这张表底栏要哪些按钮（如 --foot=AddButton,BDeleteButton,export），生成器会把它整体重写为新结构</error>");
+            return [];
+        }
+
+        $content = (string) file_get_contents($file);
+        $name = preg_match("/protected\\s+\\\$name\\s*=\\s*'([^']*)'/", $content, $m) ? $m[1] : 'list_foot';
+        if (file_put_contents($file, $this->generateFootContent($currentModule, $footClass, $buttons, $footOpts, $name)) === false) {
+            $this->io->write("<error>重写 foot 元素失败: {$file}</error>");
+            return [];
+        }
+
+        $names = implode(', ', array_map(static fn(array $b): string => $b['action'], $buttons));
+        $this->io->write('<info>✓ ' . basename($file) . " 已从旧内联三级结构整体重写为新结构（\$name='{$name}'，\$buttons：{$names}）；原内联条目里的手工改动（自定义 tooltip 等）请自行搬回 \$buttons</info>");
+        return $buttons;
+    }
+
+    /**
+     * 按 --no-check-all / --no-pager 在本表 foot 文件里补写或改写 \$checkAll / \$pager 为空数组（幂等）。
+     *
+     * 只在这两个开关显式要求关闭时动手；文件里没有 \$buttons（旧结构）时不做改动。
+     * 原本已有非空条目（如 protected \$checkAll=['@CheckAll'];）会被改成 []，并提示原值。
+     *
+     * @param array{check_all?:bool,pager?:bool} $footOpts
+     */
+    private function applyFootFlags(string $file, array $footOpts): void
+    {
+        if (!is_file($file)) {
+            return;
+        }
+        $content = (string) file_get_contents($file);
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $map = ['check_all' => 'checkAll', 'pager' => 'pager'];
+
+        $changed = false;
+        $missingProps = [];
+        foreach ($map as $opt => $prop) {
+            if (($footOpts[$opt] ?? true) !== false) {
+                continue;
+            }
+            if (preg_match('/protected\s+\$' . $prop . '\s*=\s*\[\s*\]/', $content)) {
+                continue; // 已是空数组，幂等
+            }
+            if (preg_match('/protected\s+\$' . $prop . '\s*=\s*[^;]+;/', $content, $m)) {
+                $new = preg_replace(
+                    '/protected\s+\$' . $prop . '\s*=\s*[^;]+;/',
+                    'protected $' . $prop . ' = [];',
+                    $content,
+                    1
+                );
+                if ($new === null) {
+                    $this->io->write("<error>改写 \${$prop} 失败: {$file}</error>");
+                    continue;
+                }
+                $content = $new;
+                $changed = true;
+                $this->io->write("<info>✓ 已将 " . basename($file) . " 的 protected \${$prop}（原 {$m[0]}）改为空数组</info>");
+                continue;
+            }
+            $missingProps[] = $prop;
+        }
+
+        if (!empty($missingProps)) {
+            // 属性不存在：整组插到 protected $name 行之后（沿用该行缩进）
+            if (!preg_match('/^([ \t]*)protected\s+\$name\s*=[^\r\n]*\r?\n/m', $content, $m, PREG_OFFSET_CAPTURE)) {
+                $this->io->write('<error>无法在 ' . basename($file) . " 定位 protected \$name，请手动加 protected \$checkAll = []; / protected \$pager = [];</error>");
+            } else {
+                $block = '';
+                foreach ($missingProps as $prop) {
+                    $block .= $m[1][0] . 'protected $' . $prop . ' = [];' . $eol;
+                }
+                $content = substr_replace($content, $block, $m[0][1] + strlen($m[0][0]), 0);
+                $changed = true;
+                foreach ($missingProps as $prop) {
+                    $this->io->write('<info>✓ ' . basename($file) . " 已补写 protected \${$prop} = [];</info>");
+                }
+            }
+        }
+
+        if ($changed && file_put_contents($file, $content) === false) {
+            $this->io->write("<error>写入 foot 元素失败: {$file}</error>");
+        }
     }
 
     /**
@@ -1318,12 +1464,11 @@ PHP;
      * 复制时替换：
      *   - 命名空间占位符 {MODULE_NAME} -> 当前模块
      *   - 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
-     *   - 中文名占位符 {中文名称}/{中文名} -> 表格中文名
+     *   - 中文名占位符 {中文名称} -> 表格中文名
      *   - FootTree 的 $name 占位符 {TABELE_NAME} -> 表名（模块_表）
-     *   - ToolbarTree 的 $name（list-toolbar-tree）-> list-toolbar-{表蛇形}
      * 元素文件已存在则幂等跳过。
      */
-    private function ensureTreeElements(string $modulePath, string $currentModule, string $tableName, string $className, string $configName, string $tableCn): void
+    private function ensureTreeElements(string $modulePath, string $currentModule, string $className, string $configName, string $tableCn): void
     {
         $elementDir = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . 'element';
         if (!is_dir($elementDir)) {
@@ -1345,8 +1490,6 @@ PHP;
             return;
         }
 
-        $tableSnake = $this->toSnakeCase($tableName);
-
         foreach ($files as $templateFile) {
             $content = file_get_contents($templateFile);
             if ($content === false) {
@@ -1358,12 +1501,10 @@ PHP;
             $content = str_replace('{MODULE_NAME}', $currentModule, $content);
             // 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
             $content = str_replace('Tree', $className, $content);
-            // 中文名占位符（NameTree::$text 的 {中文名称} 与 ToolbarTree title 的 {中文名}）
-            $content = str_replace(['{中文名称}', '{中文名}'], $tableCn, $content);
+            // 中文名占位符（NameTree::$text 的 {中文名称}）
+            $content = str_replace('{中文名称}', $tableCn, $content);
             // FootTree::$name 的 {TABELE_NAME}（模板原拼写）-> 表名（模块_表）
             $content = str_replace('{TABELE_NAME}', $configName, $content);
-            // ToolbarTree::$name 的 list-toolbar-tree -> list-toolbar-{表蛇形}
-            $content = str_replace('list-toolbar-tree', 'list-toolbar-' . $tableSnake, $content);
 
             // 文件名：Tree 后缀 -> 表格大驼峰名（不带 tree 子目录）
             $base = basename($templateFile);
@@ -1521,7 +1662,7 @@ PHP;
 
         // 补齐控制器配置初始化（acl / menu / lang），与普通 xqkeji:controller 创建保持一致
         // 动作集含 change 与 b_delete；顺序 add/edit/admin/delete/change/b_delete（不含树表专属的 move）；普通表中文名作为控制器显示名
-        // b_delete 必带：base 的 @Foot 底栏固定渲染「删除」批量按钮（AddDelete 的两条按钮为 add + b_delete），
+        // b_delete 必带：base 的 @Foot 底栏默认渲染「添加 + 删除」两个按钮（ListFoot 默认 buttons 为 @AddButton + @BDeleteButton），
         // 前端 xq-batch 会把选中行 POST 到 …/{控制器}/b_delete，acl 不放行则按钮点了无效
         // -D 拖动排序且列中有 ordernum 序号列时：
         //   1) 复制 example 模板 controller/order/Admin.php → controller/{表名蛇形}/Admin.php

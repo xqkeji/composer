@@ -12,11 +12,11 @@ namespace xqkeji\composer;
 trait ElInsertTrait
 {
     /**
-     * 定位类文件中 `... $el = [` 数组的起始 '[' 的绝对下标；找不到返回 null。
+     * 定位类文件中 `... $el = [`（或指定属性名，如 buttons）数组的起始 '[' 的绝对下标；找不到返回 null。
      */
-    private function elArrayOpen(string $content): ?int
+    private function elArrayOpen(string $content, string $property = 'el'): ?int
     {
-        if (preg_match('/\$el\s*=\s*\[/', $content, $m, PREG_OFFSET_CAPTURE)) {
+        if (preg_match('/\$' . preg_quote($property, '/') . '\s*=\s*\[/', $content, $m, PREG_OFFSET_CAPTURE)) {
             // 匹配串末尾即 '['
             return $m[0][1] + strlen($m[0][0]) - 1;
         }

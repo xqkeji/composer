@@ -4,9 +4,21 @@ use xqkeji\form\element\ListFoot;
 class FootTree extends ListFoot
 {
 	protected $name = 'list_foot_{TABELE_NAME}';
-	protected $el=[
-		'@CheckAll',
-		'~ToolbarTree',
+	protected $buttons=[
+		[
+			'$button',
+			'name'=>'add',
+			'attrs'=>[
+				'id'=>'xq-add',
+				'class'=>'btn btn-primary xq-add',
+				'data-bs-toggle'=>'tooltip',
+				'data-bs-placement'=>'top',
+				'data-bs-trigger'=>'hover',
+				'data-bs-html'=>'true',
+				'title'=>'没选中时，添加顶级部门；<br/>有选中时，添加子部门。',
+				'value'=>'添加',
+			],
+		]
 	];
 
 }

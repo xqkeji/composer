@@ -60,20 +60,23 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:use {name} [-m|-c|-f|-t]` — 切换当前模块/控制器，或设置 form/table 模式。
 - `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类；**预定义动作名统一小写**（`add`、`b_close`、`change_password`…，命令行大小写不敏感：`add`/`Add`/`ADD` 等价，匹配后规范为小写用于语言键与类名推导），生成的动作类文件仍为大驼峰（`add → Add.php`、`b_close → b/Close.php`），因为基类是大驼峰类名 `xqkeji\mvc\action\Add`、`xqkeji\mvc\action\b\Close`；自定义（非预定义）动作保持原始输入。`admin` 动作交互式询问默认排序 `$order`（逐个输入字段 + asc/desc，可多组）与默认查询条件 `$conditions`（逐个输入字段/操作符(= <> > >= < <= like regex，默认 =)/值，可多组；纯数字按数字、其余按字符串），有设置才写入对应 `protected $order = [...]` / `protected $conditions = [['字段', '操作符', 值], ...]` 属性，留空/非交互不写。
 - `xqkeji:model {name}` — 创建模型类。
-- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加末尾按钮（普通表单 `@SubmitReset`，搜索表单 `-s` 为 `@SearchSubmit`）；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
-- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a] [--foot 按钮动作] [--no-check-all] [--no-pager]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时（**未传 `-D` 但列含 ordernum 会自动等效 `-D`**：表格类同样写入 `$isDrag = true`，无需用户再补设置一次）：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
+- `xqkeji:form {name} [-e 元素...] [-b Tab] [-g 全局] [-s 搜索] [-a] [-r]` — 创建表单；`-s` 生成继承 `SearchForm` 的搜索表单（输入类元素自动带 `xq-s-` 搜索规格，见下；与 `-b/-g` 互斥）；`-a` 向**已存在**表单交互式追加元素、`-r` 从**已存在**表单交互式删除元素；带 `-e` 且末元素名不含 `submit` 时交互询问自动追加末尾按钮（普通表单 `@SubmitReset`，搜索表单 `-s` 为 `@SearchSubmit`）；**`-e` 不带值 = 交互循环逐个添加元素**（Tab 表单除外）。
+- `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a] [-r] [--foot 按钮动作] [--no-check-all] [--no-pager]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列、`-r` 从**已存在**表格交互式删除列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时（**未传 `-D` 但列含 ordernum 会自动等效 `-D`**：表格类同样写入 `$isDrag = true`，无需用户再补设置一次）：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型] [-f 过滤器] [-t 验证规则]` — 创建/修改/删除单个元素。`-f/-t` 仅表单元素生效（写入 `protected $filters` / `protected $vt`），表格模式会提示并忽略，`select_`/`ListSelectModel` 空子类不写这两个属性。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
 - `xqkeji:doc [-o 输出目录]` — 反射导出 `docs/commands.json` + `commands.md`。
 
-## `-a` 追加元素（form/table）行为要点
+## `-a` 追加 / `-r` 删除元素（form/table）行为要点
 
 - 先读取当前模块已有的 `form/{Class}.php` / `table/{Class}.php`，列出 `$el` 现有元素（编号）。
 - 输入编号 = 在该元素**之后**插入；`0` 或回车 = 插到**第一个元素前面**；选中 Tab 分组会进入该 Tab 内部再选位置。
 - 新元素走 `xqkeji:element` 的创建流程（终端交互弹类型/项目列表）；`select_` 前缀直接生成 SelectModel 子类；同名已存在则按 `@/~` 复用不重建。
 - 用文本偏移方式写回 `$el`（`src/ElInsertTrait.php`），只插一行引用、保留文件其余内容与手工编辑。`-a` 只插入，不新建表单/表格、不涉及控制器/acl/menu/lang。
 - 目标是 `SearchForm` 子类时：现有数组项按 `@X name='xq-s-…'` 展示；新元素若为输入类会同样询问【搜索字段/搜索操作】并插入数组项（见下节），无输入控件仍插纯引用。
+- **`-r/--remove` 删除元素引用**（`Form::removeElementsFromForm` / `Table::removeElementsFromTable`，底层 `src/ElRemoveTrait.php`）：按编号列出 `$el`（Tab 分组显示为 `[Tab] 名称（n 个元素）`，其内部元素递归编号为 `父.子`，如 `2.1`；搜索表单数组项显示为 `@X name='xq-s-…'`），接受**逗号分隔的多个编号**一次删除多条（`3` 或 `2,5.1`；留空取消，非法编号报错不落盘）。删除是按【整行文本区间】移除引用行（`elDeleteRegions` + `elApplyDeletes`），文件其余属性、注释与手工编辑原样保留；选中 Tab 分组编号即删掉整个分组，此时其内部元素的区间会被自动丢弃以免重复删。
+- `-r` 与创建/追加互斥（form 侧不能与 `-e/-b/-g/-a/-s` 同用，table 侧不能与 `-e/-T/-D/--foot/-a` 同用），只动当前模块的这一个表单/表格文件，**不碰 acl.php/menu.php/zh_cn.php**、不反向删除控制器，也不会同步删掉同名配套表单里的引用（需另跑一次 `xqkeji:form {表} -r`）。
+- `-r` 的元素类文件清理是**可选、默认不删**：被删引用若为 `~本模块元素`，会在当前模块 `form/*.php` 与 `table/*.php` 全文复查 `~元素名` 是否还有引用（表格的 `$el` 与 `$foot` 都算，靠负向前瞻避免 `~User` 命中 `~UserName`）；仍被引用则打印提示并保留，确认全无引用才询问是否顺带删除 `form/element/{X}.php` / `table/element/{X}.php`。`@base` 元素永不删。
 
 ## 搜索表单 `-s` 与 `xq-s-` 元素规格
 
@@ -136,10 +139,12 @@ composer xqkeji:use -- edu                 # 1) 切到 edu 模块
 composer xqkeji:form Article -e title,content   # 2) 建表单（自动切表单模式）
 composer xqkeji:element cover -c -y=Image       # 3) 单独加一个元素
 composer xqkeji:form Article -a                   #    或：向已有表单交互式追加元素
+composer xqkeji:form Article -r                   #    或：从已有表单按编号删除元素引用（可 2,5.1 多选）
 composer xqkeji:form SearchUser -s -e "SearchKey=username|fullname,like" -e SearchSubmit  # 建搜索表单（内联规格免询问）
 composer xqkeji:table Article -e id,title,status,edit_delete  # 4) 建表格（自动建控制器+菜单，并自动派生同名表单）
 composer xqkeji:table Article -e id,title,status,edit_delete -F  #    加 -F 则不自动建表单
 composer xqkeji:table Article -a                  #    向已有表格追加一列
+composer xqkeji:table Article -r                  #    从已有表格按编号删除列引用（~本模块元素无引用时可顺带删元素文件）
 composer xqkeji:table Article -e id,title,edit_delete --foot=add,b_delete,export   # 建表同时定制本表底部按钮
 composer xqkeji:table Article --foot=export       #    给已有表格加导出按钮（只改 table/element/FootArticle.php）
 composer xqkeji:table Article --foot=add,b_delete --no-pager  # 本表底栏不要分页条（生成 ~FootArticle 时写 protected $pager = [];）

@@ -25,6 +25,7 @@ class TableCommand extends BaseCommand
             ->addOption('controller-file', 'f', InputOption::VALUE_NONE, '生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件')
             ->addOption('no-form', 'F', InputOption::VALUE_NONE, '创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单）')
             ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表格交互式追加列元素：先列出现有列，选择插入位置（某列之后/最前面），新元素按 xqkeji:element 流程创建')
+            ->addOption('remove', 'r', InputOption::VALUE_NONE, '从【已存在】的表格删除列元素引用：列出 protected $el 现有列，输入逗号分隔的多个编号（如 3 或 2,5）一次删除多条；按整行文本方式删除引用行，文件其余内容与手工编辑（$foot、注释等）保留；被删的 ~本模块元素若在本模块所有表单/表格中再无引用，会询问是否顺带删除其元素类文件（默认否，@base 元素永不删）；与创建/追加/--foot 互斥，不碰 acl/menu/lang')
             ->addOption('foot', null, InputOption::VALUE_OPTIONAL, "表格底部操作栏按钮：值为逗号分隔的【动作名】或【base 按钮元素名】（如 --foot=add,b_delete,export 或 --foot=AddButton,BDeleteButton,export，元素名大小写不敏感、可带 @，等价于对应动作名）；只带 --foot 不带值则交互式逐个录入。会为本表生成模块本地 foot 元素类 table/element/Foot{表}.php（继承 ListFoot，只声明 protected \$buttons，壳结构由 ListFoot 渲染）并把表格 \$foot 改为 '~Foot{表}'，按钮的 name 即控制器动作、自动并入 acl.php 与 zh_cn.php；add/b_delete/export 引用 base 已有按钮元素 @AddButton/@BDeleteButton/@ExportButton，其余动作在 \$buttons 里内联 \$Button 条目；对【已存在】的表格只把缺失的按钮插入其 \$buttons 数组（幂等，不覆盖手工内容），旧版内联三级结构（没有 \$buttons）会按本次列表整体重写；树表不支持该参数")
             ->addOption('no-check-all', null, InputOption::VALUE_NONE, '本表底部操作栏【不要全选框】：生成的 foot 文件里写 protected $checkAll = [];（ListFoot 默认渲染表头全选，置空即关闭）；需与 --foot 同用')
             ->addOption('no-pager', null, InputOption::VALUE_NONE, '本表底部操作栏【不要分页条】：生成的 foot 文件里写 protected $pager = [];（ListFoot 默认渲染 @Pager/@PageSize，置空即关闭）；需与 --foot 同用')
@@ -79,6 +80,12 @@ class TableCommand extends BaseCommand
   composer xqkeji:table User -a
   composer xqkeji:table User --add
 
+  <comment># 从【已存在】的表格删除列元素引用（列出编号，输入逗号分隔的多个编号一次删多条）</comment>
+  composer xqkeji:table User -r
+  composer xqkeji:table User --remove
+  <comment>#   列出后输入 3 → 删第 3 列；输入 2,6 → 同时删第 2 列与第 6 列</comment>
+  <comment>#   若被删的是 ~本模块元素且本模块已无任何表单/表格引用它，会询问是否顺带删除元素类文件（默认否）</comment>
+
   <comment># 建表时指定底部操作栏按钮（按钮 name 即控制器动作，自动并入 acl.php 与 zh_cn.php）</comment>
   composer xqkeji:table course -e id,name,select_dept,edit_delete --foot=add,b_delete,export
   <comment>#   → 生成模块本地 table/element/FootCourse.php（继承 ListFoot，只声明 protected $buttons = ['@AddButton','@BDeleteButton','@ExportButton'];），表格 $foot = '~FootCourse'</comment>
@@ -125,6 +132,9 @@ class TableCommand extends BaseCommand
   - 使用 -N/--no-controller 仅创建表格（表格类 + 元素），跳过控制器创建与 acl.php/menu.php/zh_cn.php 初始化；树表同时跳过模型类与集合初始化
   - 需要先使用 xqkeji:use 切换到目标模块
   - 使用 -a/--add 向【已存在】的表格追加列元素：先显示当前列列表，输入编号选择在某列后插入（0/回车 = 插到第一列前面），随后按提示输入元素名并按 xqkeji:element 的流程创建（表格模式，可交互选择类型）；若同名元素已存在于 base 或当前模块则直接按 @/~ 引用，不重复创建；-a 与创建新表格互斥（带 -a 时只插入、不新建表格、不涉及控制器/acl/menu/lang）
+  - 使用 -r/--remove 从【已存在】的表格删除列元素引用：先按编号列出 protected \$el 的现有列，随后输入逗号分隔的多个编号一次删除多条（如 3 或 2,6；留空取消）。删除是按【整行文本区间】移除引用行，表格类的其它属性（\$foot、\$isDrag）、注释与手工编辑原样保留；不会顺带改动表单文件（同名配套表单需单独执行 xqkeji:form -r）
+  - -r 只动表格文件的 \$el，不碰 acl.php/menu.php/zh_cn.php，也不会反向删除控制器/元素；-r 与创建、追加、--foot 互斥（不能与 -e/-T/-D/--foot/-a 同用）；树表同样支持（删除其内置默认列引用）
+  - -r 的元素类文件清理是可选项：被删引用若为 ~本模块元素，会在当前模块的 form/*.php 与 table/*.php 里复查该元素是否还有引用（表格的 \$el 与 \$foot 都算），仍被引用则保留并提示；确认无任何引用时才询问【是否顺带删除该元素类文件】，默认不删；@base 元素（如 @Id、@EditDelete）属于 base 模块，永不删除
   - 【默认】建表格时会用 -e 传入的表格列自动派生并创建一个同名表单（form/{大驼峰}.php 及所需 form/element/）：从表格列中剔除“仅表格”元素 id、create_time、create_date、update_time、update_date、edit_delete、delete、view_delete（按蛇形名匹配），剩余列作为表单元素，末尾追加 submit_reset（base 模块的提交/重置按钮，引用为 @SubmitReset）；表单与表格同名并共享控制器与中文名，元素中文名在建表时已写入 lang，建表单过程一般不再重复询问；select_ 前缀列照常生成 SelectModel 子类
   - 使用 -F/--no-form 关闭上述自动建表单行为，仅创建表格；当 -e 未传列、或表格列全部是“仅表格”元素时，本就不会生成表单（无可用表单列）；-N（仅建表不建控制器）不影响该自动建表单逻辑，如需两者都跳过可同时使用 -N -F
   - 控制器默认使用【虚拟控制器】：普通表格不会生成 controller/{Class}.php 实体文件，仅初始化 acl.php/menu.php/zh_cn.php；只要 acl.php 里有该控制器与动作的定义，框架即按约定解析动作、控制器即“存在”。需要实体文件时加 -f/--controller-file（等价 xqkeji:controller 的 -f/--file 语义）；该参数仅对普通表格生效，树状表格仍会复制 controller/{表名}/ 下的动作类文件（admin/add/move 等）
@@ -164,6 +174,29 @@ EOF
         $table = new Table($this->getIO(), $this->requireComposer());
         if ($input->getOption('add')) {
             $table->addElementToTable($name, $input, $output);
+            return 0;
+        }
+
+        // 从已有表格删除列元素引用（-r/--remove）：只删引用行，不创建、不涉及控制器/acl/menu/lang
+        if ($input->getOption('remove')) {
+            $conflicts = [];
+            if (!empty($input->getOption('element'))) {
+                $conflicts[] = '-e';
+            }
+            if ($input->getOption('tree')) {
+                $conflicts[] = '-T';
+            }
+            if ($input->getOption('drag')) {
+                $conflicts[] = '-D';
+            }
+            if ($input->getOption('foot') !== null) {
+                $conflicts[] = '--foot';
+            }
+            if ($conflicts !== []) {
+                $output->writeln('<error>-r/--remove 只用于删除已有表格的列，不能与 ' . implode('/', $conflicts) . '/-a 同时使用</error>');
+                return 1;
+            }
+            $table->removeElementsFromTable($name);
             return 0;
         }
 

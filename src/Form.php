@@ -9,6 +9,7 @@ class Form
 {
     use PathTrait;
     use ElInsertTrait;
+    use ElRemoveTrait;
     use ConfirmTrait;
 
     private IOInterface $io;
@@ -333,6 +334,71 @@ class Form
             $isBase = false;
         }
         return $chain;
+    }
+
+    /**
+     * 从【已存在】表单的 protected $el 中交互式删除元素引用（xqkeji:form 的 -r/--remove）。
+     *
+     * 流程：读取表单类文件 → 带编号列出元素（Tab 分组内的元素编号为 父.子）→ 接受逗号分隔的多选编号
+     * → 以纯文本整行区间方式删除对应引用行（保留文件其余内容与手工编辑）。
+     * 被删的 ~本模块元素若在本模块所有表单/表格中再无引用，会询问是否顺带删除其元素类文件（默认否）。
+     * 只删引用，不新建任何文件，也不碰 acl.php/menu.php/zh_cn.php。
+     */
+    public function removeElementsFromForm(string $formName): void
+    {
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $formName)) {
+            $this->io->write('<error>表单名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
+            $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return;
+        }
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在</error>");
+            return;
+        }
+
+        $className = $this->toCamelCase($formName);
+        $formFile = $modulePath . DIRECTORY_SEPARATOR . 'form' . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!is_file($formFile)) {
+            $this->io->write("<error>表单不存在: {$formFile}</error>");
+            $this->io->write("<comment>  请先使用 composer xqkeji:form {$formName} 创建表单</comment>");
+            return;
+        }
+
+        $content = file_get_contents($formFile);
+        if ($content === false) {
+            $this->io->write("<error>读取表单文件失败: {$formFile}</error>");
+            return;
+        }
+        $open = $this->elArrayOpen($content);
+        if ($open === null) {
+            $this->io->write("<error>无法在表单中定位 protected \$el 数组: {$formFile}</error>");
+            return;
+        }
+
+        $result = $this->elRemoveFlow($content, $open, "表单 '{$className}' 当前元素列表：", '元素');
+        if ($result === null) {
+            return;
+        }
+        if (file_put_contents($formFile, $result['content']) === false) {
+            $this->io->write("<error>写入表单文件失败: {$formFile}</error>");
+            return;
+        }
+
+        $removed = [];
+        foreach ($result['refs'] as $ref) {
+            $removed[] = "'{$ref}'";
+        }
+        $this->io->write("<info>✓ 已从表单 {$className} 的 \$el 删除 {$result['count']} 条引用"
+            . ($removed === [] ? '' : '（' . implode('、', $removed) . '）') . '</info>');
+        $this->io->write("  文件: {$formFile}");
+
+        $this->elOfferElementCleanup($modulePath, 'form' . DIRECTORY_SEPARATOR . 'element', $result['refs']);
     }
 
     /**

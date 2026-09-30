@@ -9,6 +9,7 @@ class Table
 {
     use PathTrait;
     use ElInsertTrait;
+    use ElRemoveTrait;
     use ConfirmTrait;
 
     /**
@@ -367,6 +368,71 @@ class Table
 
         return [$elementRefs, "<info>✓ 拖动排序表格需序号列：已自动添加 '@Ordernum'"
             . ($beforeEdit ? '（位于 @EditDelete 之前）' : '') . '</info>'];
+    }
+
+    /**
+     * 从【已存在】表格的 protected $el 中交互式删除列元素引用（xqkeji:table 的 -r/--remove）。
+     *
+     * 与表单侧同一条流程：读取表格类文件 → 带编号列出列元素 → 接受逗号分隔的多选编号
+     * → 以纯文本整行区间方式删除对应引用行（保留其余内容与手工编辑）。
+     * 被删的 ~本模块元素若在本模块所有表单/表格中再无引用，询问是否顺带删除其元素类文件（默认否）。
+     * 只删引用，不新建文件，也不碰 acl.php/menu.php/zh_cn.php；表格列无 Tab 分组，编号只有一层。
+     */
+    public function removeElementsFromTable(string $tableName): void
+    {
+        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
+            $this->io->write('<error>表格名称格式无效，只能包含字母、数字和下划线，且以字母开头</error>');
+            return;
+        }
+
+        $currentModule = $this->context->getCurrentModule();
+        if ($currentModule === null) {
+            $this->io->write('<error>未设置当前模块，请先使用 composer xqkeji:use -- module_name</error>');
+            return;
+        }
+        $modulePath = $this->context->getValidModulePath();
+        if ($modulePath === null) {
+            $this->io->write("<error>模块 '{$currentModule}' 无效或不存在</error>");
+            return;
+        }
+
+        $className = $this->toCamelCase($tableName);
+        $tableFile = $modulePath . DIRECTORY_SEPARATOR . 'table' . DIRECTORY_SEPARATOR . $className . '.php';
+        if (!is_file($tableFile)) {
+            $this->io->write("<error>表格不存在: {$tableFile}</error>");
+            $this->io->write("<comment>  请先使用 composer xqkeji:table {$tableName} 创建表格</comment>");
+            return;
+        }
+
+        $content = file_get_contents($tableFile);
+        if ($content === false) {
+            $this->io->write("<error>读取表格文件失败: {$tableFile}</error>");
+            return;
+        }
+        $open = $this->elArrayOpen($content);
+        if ($open === null) {
+            $this->io->write("<error>无法在表格中定位 protected \$el 数组: {$tableFile}</error>");
+            return;
+        }
+
+        $result = $this->elRemoveFlow($content, $open, "表格 '{$className}' 当前列元素列表：", '列元素');
+        if ($result === null) {
+            return;
+        }
+        if (file_put_contents($tableFile, $result['content']) === false) {
+            $this->io->write("<error>写入表格文件失败: {$tableFile}</error>");
+            return;
+        }
+
+        $removed = [];
+        foreach ($result['refs'] as $ref) {
+            $removed[] = "'{$ref}'";
+        }
+        $this->io->write("<info>✓ 已从表格 {$className} 的 \$el 删除 {$result['count']} 条引用"
+            . ($removed === [] ? '' : '（' . implode('、', $removed) . '）') . '</info>');
+        $this->io->write("  文件: {$tableFile}");
+
+        $this->elOfferElementCleanup($modulePath, 'table' . DIRECTORY_SEPARATOR . 'element', $result['refs']);
     }
 
     /**

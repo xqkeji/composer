@@ -23,6 +23,7 @@ class FormCommand extends BaseCommand
             ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
             ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类）')
             ->addOption('search', 's', InputOption::VALUE_NONE, '创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a|b|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 [\'@X\', \'name\' => \'xq-s-字段,操作\'] 数组项；输入元素统一套 \'@search\' 模板（新建元素类写 $template 属性，复用元素在数组项内联 template）；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥')
+            ->addOption('remove', 'r', InputOption::VALUE_NONE, '从【已存在】的表单删除元素引用：列出 protected $el 现有元素（Tab 分组内的元素编号为 父.子，如 2.1），输入逗号分隔的多个编号（如 3 或 2,5.1）一次删除多条；按整行文本方式删除引用行，文件其余内容与手工编辑保留；被删的 ~本模块元素若在本模块所有表单/表格中再无引用，会询问是否顺带删除其元素类文件（默认否，@base 元素永不删）；与创建/追加互斥，不碰 acl/menu/lang')
             ->setHelp(<<<'EOF'
 创建表单类和表单元素
 
@@ -68,6 +69,12 @@ class FormCommand extends BaseCommand
   composer xqkeji:form User -a
   composer xqkeji:form User --add
 
+  <comment># 从【已存在】的表单删除元素引用（列出编号，输入逗号分隔的多个编号一次删多条）</comment>
+  composer xqkeji:form User -r
+  composer xqkeji:form User --remove
+  <comment>#   列出后输入 3 → 删第 3 条；输入 2,5.1 → 删第 2 条与第 5 个 Tab 内的第 1 个元素</comment>
+  <comment>#   若被删的是 ~本模块元素且本模块已无任何表单/表格引用它，会询问是否顺带删除元素类文件（默认否）</comment>
+
 <info>说明：</info>
 
   - 表单名支持大小写，自动转为大驼峰（如 user → User、user_login → UserLogin）
@@ -97,6 +104,9 @@ class FormCommand extends BaseCommand
   - 需要先使用 xqkeji:use 切换到目标模块
   - 使用 -a/--add 向【已存在】的表单追加元素：先显示当前元素列表，输入编号选择在某个元素后插入（0/回车 = 插到第一个元素前面；选中 Tab 分组时会进入该 Tab 内部再选位置），随后按提示输入元素名并按 xqkeji:element 的流程创建（可交互选择类型、Select/Check/Radio 可交互输入项目列表）
   - -a 追加时：元素名转蛇形后以 select_ 开头（如 select_dept）自动生成继承 SelectModel 的空子类且不询问类型；若同名元素已存在于 base 或当前模块则直接按 @/~ 引用，不重复创建；-a 与创建新表单互斥（带 -a 时只插入、不新建表单）
+  - 使用 -r/--remove 从【已存在】的表单删除元素引用：先按编号列出 protected \$el 的现有条目（Tab 分组显示为 [Tab] 名称（n 个元素），其内部元素递归编号为 父.子，如 2.1 表示第 2 个 Tab 里的第 1 个元素），随后输入逗号分隔的多个编号一次删除多条（如 3 或 2,5.1；留空取消）。删除是按【整行文本区间】移除引用行，表单文件里的其它属性、注释与手工编辑原样保留；选中 Tab 分组编号即删除整个分组（含其内部元素）
+  - -r 删除只动表单文件的 \$el，不碰 acl.php/menu.php/zh_cn.php，也不会反向删除控制器/元素；-r 与创建、追加互斥（不能与 -e/-b/-g/-a/-s 同用）
+  - -r 的元素类文件清理是可选项：被删引用若为 ~本模块元素，会在当前模块的 form/*.php 与 table/*.php 里复查该元素是否还有引用（表格的 \$el 与 \$foot 都算），仍被引用则保留并提示；确认无任何引用时才询问【是否顺带删除该元素类文件】，默认不删；@base 元素属于 base 模块，永不删除
 
 EOF
             );
@@ -124,6 +134,18 @@ EOF
         if ($input->getOption('add')) {
             $form = new Form($this->getIO(), $this->requireComposer());
             $form->addElementToForm($name, $input, $output);
+            return 0;
+        }
+
+        // 从已有表单删除元素引用（-r/--remove）：只删引用行，不创建、不涉及 acl/menu/lang
+        if ($input->getOption('remove')) {
+            if ($input->getOption('search') || !empty($input->getOption('element'))
+                || !empty($input->getOption('tab')) || !empty($input->getOption('global'))) {
+                $output->writeln('<error>-r/--remove 只用于删除已有表单的元素，不能与 -e/-b/-g/-a/-s 同时使用</error>');
+                return 1;
+            }
+            $form = new Form($this->getIO(), $this->requireComposer());
+            $form->removeElementsFromForm($name);
             return 0;
         }
 

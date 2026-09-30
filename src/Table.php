@@ -1464,7 +1464,7 @@ PHP;
      * 复制时替换：
      *   - 命名空间占位符 {MODULE_NAME} -> 当前模块
      *   - 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
-     *   - 中文名占位符 {中文名称} -> 表格中文名
+     *   - 中文名占位符 {中文名称}/{中文名} -> 表格中文名
      *   - FootTree 的 $name 占位符 {TABELE_NAME} -> 表名（模块_表）
      * 元素文件已存在则幂等跳过。
      */
@@ -1501,8 +1501,8 @@ PHP;
             $content = str_replace('{MODULE_NAME}', $currentModule, $content);
             // 元素类名 / 引用中的 Tree 后缀 -> 表格大驼峰名（NameTree -> NameTestTree 等）
             $content = str_replace('Tree', $className, $content);
-            // 中文名占位符（NameTree::$text 的 {中文名称}）
-            $content = str_replace('{中文名称}', $tableCn, $content);
+            // 中文名占位符（NameTree::$text 的 {中文名称} 与 FootTree tooltip 的 {中文名}）
+            $content = str_replace(['{中文名称}', '{中文名}'], $tableCn, $content);
             // FootTree::$name 的 {TABELE_NAME}（模板原拼写）-> 表名（模块_表）
             $content = str_replace('{TABELE_NAME}', $configName, $content);
 

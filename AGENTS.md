@@ -127,7 +127,7 @@ class FootEmail extends BaseListFoot
 - `--no-check-all` / `--no-pager`（须与 `--foot` 同用）关掉全选框 / 分页条：新建的 foot 类直接写上 `$checkAll = [];` / `$pager = [];`；已有 foot 文件则由 `applyFootFlags` 补写、或把已有的非空声明改写为 `[]`（会打印原值），已是 `[]` 则不动。
 - 已存在表格的追加是**文本插入**（`insertFootButtons`）：定位 `protected $buttons = [`，按括号深度（跳过引号内容）找到配对 `]` 与末条目，把缺失条目插在其后（缩进沿用已有条目；空数组会展开成多行）；同动作条目（`'@AddButton'` 反查或内联 `'name' => '动作'`）已存在则跳过，文件其余内容与手工编辑（含 tooltip 里的 `<br/>`、方括号）原样保留。
 - 只写本模块的文件，**绝不写回 `'@X'`（base）文件**；遇到 1.1.53 之前生成的旧“三级内联”foot 文件（没有 `$buttons`）会按本次 `--foot` 给出的**完整**按钮列表把它整体重写为新结构（`rewriteLegacyFoot`，沿用文件原有的 `$name`；旧 `$el` 里的手工改动如自定义 tooltip 需自行搬回 `$buttons`），只带 `--foot` 不给列表时报错、不动文件。
-- 边界：树表（`-T`）的 foot 由 `src/example` 的 tree 模板生成（`FootTree.php`，复制时把 `{TABELE_NAME}` 换成表名），`--foot` 提示并跳过；`-N` 只生成 foot 文件、不写 acl/lang；从 `@Foot` 切到 `~Foot{表}` 后，base foot 里其它按钮不再出现在这张表（需要就一并写进 `--foot`）。
+- 边界：树表（`-T`）的 foot 由 `src/example` 的 tree 模板生成（`FootTree.php`，复制时 `{TABELE_NAME}` 换成表名、`{中文名}` 换成表格中文名，`Tree` 后缀换成表名大驼峰），`--foot` 提示并跳过；`-N` 只生成 foot 文件、不写 acl/lang；从 `@Foot` 切到 `~Foot{表}` 后，base foot 里其它按钮不再出现在这张表（需要就一并写进 `--foot`）。
 
 ## 常见工作流示例
 

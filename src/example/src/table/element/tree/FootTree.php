@@ -15,7 +15,7 @@ class FootTree extends ListFoot
 				'data-bs-placement'=>'top',
 				'data-bs-trigger'=>'hover',
 				'data-bs-html'=>'true',
-				'title'=>'没选中时，添加顶级部门；<br/>有选中时，添加子部门。',
+				'title'=>'没选中时，添加顶级{中文名}；<br/>有选中时，添加子{中文名}。',
 				'value'=>'添加',
 			],
 		]

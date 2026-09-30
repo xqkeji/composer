@@ -145,7 +145,7 @@ class TableCommand extends BaseCommand
   - 使用 --no-check-all / --no-pager 关掉本表底栏的【全选框】/【分页条】：分别在 foot 文件里写 protected $checkAll = []; 与 protected $pager = [];（ListFoot 只有在子类显式置空时才不渲染这两块，不写就用框架默认）；两者都需与 --foot 同用（要先有本表 foot 文件），对已存在的 foot 文件是幂等的补写/改写
   - 【已存在】的表格执行 --foot：不新建表格，只把缺失的条目以文本方式插入其 foot 文件的 $buttons 数组末尾（沿用数组现有缩进，同动作已存在则跳过、文件其余内容与手工编辑原样保留）；若该表 $foot 还指向 '@Foot'（base 共享 foot），会先生成 '~Foot{表名}' 专属文件再插入，此时按钮不再继承 base foot 里的其它按钮，需要就一并写进 --foot 列表
   - 【迁移旧结构】：1.1.53 及更早生成的 foot 文件是内联三级结构、没有 protected $buttons，对它执行 --foot 必须给出这张表【完整】的按钮列表（如 --foot=AddButton,BDeleteButton,export），生成器会按新结构整体重写该文件（沿用原来的 $name，$el 里的手工改动如自定义 tooltip 不会自动搬进 $buttons，提示后需自行处理）；不给按钮列表只带 --foot 时报错不动文件
-  - --foot 不带值（如 composer xqkeji:table course --foot）进入交互式循环录入按钮动作（每次问一个动作名，留空结束）；--no-interaction 下必须给出 --foot=动作列表；树状表格（-T）的 foot 由内置 tree 模板生成，--foot 会提示并跳过；-N（仅建表格）时不写 acl/lang，只生成 foot 文件
+  - --foot 不带值（如 composer xqkeji:table course --foot）进入交互式循环录入按钮动作（每次问一个动作名，留空结束）；--no-interaction 下必须给出 --foot=动作列表；树状表格（-T）的 foot 由内置 tree 模板生成，--foot 会提示并跳过（模板自带 protected $pager = [];，树表不分页；全选框 $checkAll 保留框架默认）；-N（仅建表格）时不写 acl/lang，只生成 foot 文件
   - 与 -a 的区别：-a 追加的是【列】（表格 \$el 里的列元素），--foot 维护的是【底部操作栏按钮】；两者都只动当前模块自己的文件，不碰 base
 
 EOF

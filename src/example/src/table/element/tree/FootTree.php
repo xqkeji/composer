@@ -20,6 +20,7 @@ class FootTree extends ListFoot
 			],
 		]
 	];
+	protected $pager=[];
 
 }
 

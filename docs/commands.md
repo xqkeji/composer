@@ -751,7 +751,8 @@
 | `--copy` | - | 不需要值 | 否 | 使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境 |
 | `--no-update` | - | 不需要值 | 否 | 仅修改 composer.json，不自动运行 composer update/require |
 | `--require` | - | 不需要值 | 否 | 强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包） |
-| `--no-alias` | - | 不需要值 | 否 | 不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束） |
+| `--local-alias` | - | 不需要值 | 否 | 把版本别名写进【本地包】的 extra.branch-alias（会改动本地包 composer.json）；默认只写宿主的内联别名 |
+| `--no-alias` | - | 不需要值 | 否 | 完全不做版本别名：宿主 require 写 *，也不动本地包（本地包若报成 dev-x，依赖它的稳定约束会解析失败） |
 
 ### 帮助 / 示例
 
@@ -778,18 +779,28 @@
   # 强制走 composer require（即便包已存在也重新按 require 流程处理）
   composer xqkeji:path xqkeji/composer ../composer --require
 
+  # 别名写进本地包的 extra.branch-alias（会改动本地包 composer.json）
+  composer xqkeji:path xqkeji/composer ../composer --local-alias
+
+  # 完全不做版本别名（本地包自带 version、或没有稳定约束卡它时）
+  composer xqkeji:path xqkeji/composer ../composer --no-alias
+
 说明：
 
   - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，symlink=true 默认）
-  - 同时在 require 中追加 "包名": "*"（若已存在则更新）
+  - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
   - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
-  - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
-  - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
+  - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本
+  - 宿主内联别名对传递依赖同样有效：Composer 会把它作为一个等价版本加入解析池，别的项目 require 该包的 ^<系列> 也能命中
+  - --local-alias：改为把 <系列>.x-dev 写进【本地包】composer.json 的 extra.branch-alias.dev-<分支>（旧默认行为；会改动本地包文件并按 4 空格重排 composer.json，好处是换任何宿主都自动生效）；--no-alias：两者都不写，require 用 *（仅适合本地包自带 version、或没人用稳定约束卡它的场景）
+  - 本地包已自带 version 字段、或已声明当前分支的 extra.branch-alias 时，path 仓库报的版本已是可用版本，不再需要别名（require 写 *）
+  - 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入。每次运行按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
+  - 分支名取自本地包的 .git/HEAD：内联别名模式下无 .git 直接按 dev-main（与 Composer 的回退一致），读到游离 HEAD/worktree 则跳过别名；--local-alias 模式下读不到分支会交互询问（默认 main）
 ```
 
 ## xqkeji:doc

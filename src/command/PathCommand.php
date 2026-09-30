@@ -21,7 +21,8 @@ class PathCommand extends BaseCommand
             ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境')
             ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update/require')
             ->addOption('require', null, InputOption::VALUE_NONE, '强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包）')
-            ->addOption('no-alias', null, InputOption::VALUE_NONE, '不自动为本地 dev 分支包写入 branch-alias（默认会自动，使 path 仓库版本满足稳定约束）')
+            ->addOption('local-alias', null, InputOption::VALUE_NONE, '把版本别名写进【本地包】的 extra.branch-alias（会改动本地包 composer.json）；默认只写宿主的内联别名')
+            ->addOption('no-alias', null, InputOption::VALUE_NONE, '完全不做版本别名：宿主 require 写 *，也不动本地包（本地包若报成 dev-x，依赖它的稳定约束会解析失败）')
             ->setHelp(<<<'EOF'
 将一个 composer 包注册为本地路径包（本地开发/联调用）
 
@@ -45,18 +46,28 @@ class PathCommand extends BaseCommand
   <comment># 强制走 composer require（即便包已存在也重新按 require 流程处理）</comment>
   composer xqkeji:path xqkeji/composer ../composer --require
 
+  <comment># 别名写进本地包的 extra.branch-alias（会改动本地包 composer.json）</comment>
+  composer xqkeji:path xqkeji/composer ../composer --local-alias
+
+  <comment># 完全不做版本别名（本地包自带 version、或没有稳定约束卡它时）</comment>
+  composer xqkeji:path xqkeji/composer ../composer --no-alias
+
 <info>说明：</info>
 
   - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，symlink=true 默认）
-  - 同时在 require 中追加 "包名": "*"（若已存在则更新）
+  - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等）
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
   - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
-  - 若本地包 composer.json 无 version 字段（典型 dev 分支），默认自动在其 extra.branch-alias.dev-<分支> 写入 <系列>.x-dev（如 dev-main→1.2.x-dev），使 path 仓库版本满足依赖的 ^x 稳定约束，避免“canonical repo 无法解析”；--no-alias 可跳过
-  - branch-alias 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入；分支名取自本地 git HEAD（无 git 时提示，默认 main）。每次运行会按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
+  - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本
+  - 宿主内联别名对传递依赖同样有效：Composer 会把它作为一个等价版本加入解析池，别的项目 require 该包的 ^<系列> 也能命中
+  - --local-alias：改为把 <系列>.x-dev 写进【本地包】composer.json 的 extra.branch-alias.dev-<分支>（旧默认行为；会改动本地包文件并按 4 空格重排 composer.json，好处是换任何宿主都自动生效）；--no-alias：两者都不写，require 用 *（仅适合本地包自带 version、或没人用稳定约束卡它的场景）
+  - 本地包已自带 version 字段、或已声明当前分支的 extra.branch-alias 时，path 仓库报的版本已是可用版本，不再需要别名（require 写 *）
+  - 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入。每次运行按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
+  - 分支名取自本地包的 .git/HEAD：内联别名模式下无 .git 直接按 dev-main（与 Composer 的回退一致），读到游离 HEAD/worktree 则跳过别名；--local-alias 模式下读不到分支会交互询问（默认 main）
 
 EOF
             );
@@ -70,6 +81,12 @@ EOF
         $noUpdate = (bool) $input->getOption('no-update');
         $forceRequire = (bool) $input->getOption('require');
         $noAlias = (bool) $input->getOption('no-alias');
+        $localAlias = (bool) $input->getOption('local-alias');
+
+        if ($noAlias && $localAlias) {
+            $output->writeln('<error>--no-alias 与 --local-alias 互斥：前者不做任何版本别名，后者把别名写进本地包</error>');
+            return 1;
+        }
 
         // 校验包名
         if (!preg_match('/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/', $package)) {
@@ -96,9 +113,12 @@ EOF
         $pkgInfo = json_decode((string) file_get_contents($pkgComposer), true) ?: [];
         $isPlugin = isset($pkgInfo['type']) && $pkgInfo['type'] === 'composer-plugin';
 
-        // 本地包无 version 字段（典型 dev 分支）：自动写 branch-alias，使 path 仓库版本满足稳定约束
-        if (!$noAlias) {
+        // 版本别名策略：默认只在宿主 require 写内联别名（不动本地包）；--local-alias 改写进本地包；--no-alias 不做
+        $requireConstraint = '*';
+        if ($localAlias) {
             $this->ensureBranchAlias($package, $absPath, $pkgComposer, $pkgInfo, $output);
+        } elseif (!$noAlias) {
+            $requireConstraint = $this->inlineAliasConstraint($package, $absPath, $pkgInfo, $output);
         }
 
         // 定位当前项目 composer.json
@@ -122,11 +142,15 @@ EOF
         ];
         $project['repositories'] = $repositories;
 
-        // 2) require：追加 "包名": "*"
+        // 2) require：追加/覆盖该包约束（默认是宿主侧内联别名，见 inlineAliasConstraint）
         if (!isset($project['require']) || !is_array($project['require'])) {
             $project['require'] = [];
         }
-        $project['require'][$package] = '*';
+        $oldRequire = $project['require'][$package] ?? null;
+        if ($oldRequire !== null && $oldRequire !== $requireConstraint) {
+            $output->writeln("<comment>require.{$package} 由 \"{$oldRequire}\" 改为 \"{$requireConstraint}\"</comment>");
+        }
+        $project['require'][$package] = $requireConstraint;
 
         // 3) 兜底 minimum-stability: dev + prefer-stable: true（dev 分支可解析）
         if (!isset($project['minimum-stability'])) {
@@ -163,7 +187,7 @@ EOF
 
         $output->writeln("<info>已将 {$package} 注册为本地路径包：</info>");
         $output->writeln("  repositories.{$package} = path, url={$absPath}, symlink=" . ($useCopy ? 'false' : 'true'));
-        $output->writeln("  require.{$package} = *");
+        $output->writeln("  require.{$package} = {$requireConstraint}");
         $output->writeln("  minimum-stability = dev, prefer-stable = true");
 
         // 5) 自动安装：包未安装 → composer require（完整安装事件流，含模块包 post-package-install 钩子/插件激活）；
@@ -174,7 +198,8 @@ EOF
 
         if ($noUpdate) {
             $output->writeln('');
-            $output->writeln("<comment>已跳过自动执行，请手动运行：composer {$verb} {$package}</comment>");
+            $manual = $useRequire ? "require \"{$package}:{$requireConstraint}\"" : "update {$package}";
+            $output->writeln("<comment>已跳过自动执行，请手动运行：composer {$manual}</comment>");
             return 0;
         }
 
@@ -188,11 +213,11 @@ EOF
         $application = $this->getApplication();
         $application->resetComposer();
         $installer = $application->find($verb);
-        // require 需显式约束以保持 "*"（避免解析成具体版本改写约束）；update 只接包名
+        // require 需显式带上刚写入的约束（可能是内联别名），避免被改写成解析出的具体版本；update 只接包名
         $installerInput = $useRequire
             ? new ArrayInput([
                 'command' => 'require',
-                'packages' => ["{$package}:*"],
+                'packages' => ["{$package}:{$requireConstraint}"],
                 '--no-interaction' => true,
             ])
             : new ArrayInput([
@@ -269,16 +294,86 @@ EOF
     }
 
     /**
-     * 本地包无 version 字段（典型 dev 分支）时，自动在 extra.branch-alias.dev-<分支> 写入
-     * <系列>.x-dev，使 path 仓库报告的版本满足依赖的 ^x 稳定约束，
-     * 避免“canonical path repo 版本不满足约束、且不可回退 packagist”的解析失败。
+     * 宿主侧内联别名：返回要写进宿主 require 的约束（默认别名模式）。
      *
-     * 系列号来源优先级：
-     *   ① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）
-     *   ② 本地 git 最新 tag
-     *   ③ 交互输入
-     * 分支名取自本地 git HEAD；无 git 时交互提示（默认 main）。
-     * 每次运行会按最新版本自动推进系列号（如 1.2.x-dev → 1.3.x-dev）。
+     * path 仓库里无 version 字段的包会报成 dev-<分支>（Composer 无 VCS 信息时固定回退 dev-main），
+     * 它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical 不回退别的源，解析会直接失败。
+     * 这里返回 "dev-<分支> as <系列>.x-dev"，把别名落在宿主项目自己的 composer.json 上，本地包文件不动；
+     * 本地包已自带 version 或已声明当前分支的 extra.branch-alias（报出的版本已可用）时返回 '*'。
+     */
+    private function inlineAliasConstraint(string $package, string $absPath, array $pkgInfo, OutputInterface $output): string
+    {
+        if (isset($pkgInfo['version'])) {
+            return '*';
+        }
+
+        $branch = $this->detectBranch($absPath);
+        if ($branch === null || $branch === '' || $branch === 'HEAD') {
+            if (file_exists($absPath . '/.git')) {
+                // 有 .git 却读不到分支（detached HEAD / linked worktree）：Composer 会改用最近 tag 的版本，
+                // 此时猜 dev-<分支> 反而会让根约束解析失败，所以不做别名，只提示
+                $output->writeln('<comment>本地包处于游离 HEAD 或 worktree（读不到当前分支），跳过宿主内联别名，require 用 *；</comment>');
+                $output->writeln('<comment>若解析报“版本不满足约束”，请切到固定分支后再跑本命令，或自行在宿主 require 里写内联别名</comment>');
+                return '*';
+            }
+            // 没有 git 仓库：Composer 猜不到版本，固定回退为 dev-main
+            $branch = 'main';
+        }
+        $aliasKey = 'dev-' . $branch;
+
+        $declared = $pkgInfo['extra']['branch-alias'][$aliasKey] ?? null;
+        if (is_string($declared) && $declared !== '') {
+            $output->writeln("<comment>本地包 extra.branch-alias.{$aliasKey} 已是 {$declared}，无需宿主内联别名（require 用 *）</comment>");
+            return '*';
+        }
+
+        $resolved = $this->resolveAliasSeries($package, $absPath);
+        if ($resolved === null) {
+            $output->writeln("<comment>无法确定 {$package} 的稳定版本系列（未发布/未安装、无 git tag、且未交互输入），跳过宿主内联别名，require 用 *；</comment>");
+            $output->writeln("<comment>若解析报“版本不满足约束”，请手动在宿主 composer.json 的 require 里把该包写成 \"{$aliasKey} as &lt;系列&gt;.x-dev\"</comment>");
+            return '*';
+        }
+        [$series, $seriesSource] = $resolved;
+
+        $constraint = $aliasKey . ' as ' . $series . '.x-dev';
+        $output->writeln("<info>宿主 require 写入内联别名 {$constraint}（系列号来源：{$seriesSource}，本地包文件不改动）</info>");
+        return $constraint;
+    }
+
+    /**
+     * 稳定版本系列（major.minor）与其来源说明，供两种别名模式共用。
+     * 优先级：① 包已发布/已安装的最新稳定版（无需 git）② 本地 git 最新 tag ③ 交互输入；都拿不到返回 null。
+     *
+     * @return array{0:string,1:string}|null
+     */
+    private function resolveAliasSeries(string $package, string $absPath): ?array
+    {
+        $io = $this->getIO();
+
+        $series = $this->registryLatestStable($package);
+        if ($series !== null) {
+            return [$series, '包最新版本'];
+        }
+
+        $tag = $this->detectLatestTag($absPath);
+        if ($tag !== null && preg_match('/(\d+\.\d+)\.\d+/', $tag, $m)) {
+            return [$m[1], '本地 git tag'];
+        }
+
+        $ans = $io->ask("无法确定 {$package} 对应的稳定版本系列（如 1.2），请手动输入：", null);
+        if (is_string($ans) && preg_match('/^\d+\.\d+$/', trim((string) $ans))) {
+            return [trim((string) $ans), '手动输入'];
+        }
+
+        return null;
+    }
+
+    /**
+     * --local-alias：把别名写进【本地包】composer.json 的 extra.branch-alias.dev-<分支> = <系列>.x-dev，
+     * 使 path 仓库自身报告出满足 ^x 稳定约束的版本（换任何宿主都生效，代价是改动本地包文件）。
+     *
+     * 分支名取自本地 git HEAD，无 git 时交互提示（默认 main）；系列号见 resolveAliasSeries，
+     * 每次运行会按最新版本自动推进（如 1.2.x-dev → 1.3.x-dev）。
      */
     private function ensureBranchAlias(string $package, string $absPath, string $pkgComposer, array &$pkgInfo, OutputInterface $output): void
     {
@@ -296,30 +391,13 @@ EOF
         }
         $aliasKey = 'dev-' . $branch;
 
-        // 系列号：优先取包已发布/已安装的最新稳定版本（与 composer 最新版本对应，无需 git）
-        $series = $this->registryLatestStable($package);
-        $seriesSource = '包最新版本';
-        if ($series === null) {
-            // 回退：本地 git 最新 tag
-            $tag = $this->detectLatestTag($absPath);
-            if ($tag !== null && preg_match('/(\d+\.\d+)\.\d+/', $tag, $m)) {
-                $series = $m[1];
-                $seriesSource = '本地 git tag';
-            }
-        }
-        if ($series === null) {
-            // 回退：交互输入
-            $ans = $io->ask("无法确定 {$package} 对应的稳定版本系列（如 1.2），请手动输入：", null);
-            if (is_string($ans) && preg_match('/^\d+\.\d+$/', trim((string) $ans))) {
-                $series = trim((string) $ans);
-                $seriesSource = '手动输入';
-            }
-        }
-        if ($series === null) {
+        $resolved = $this->resolveAliasSeries($package, $absPath);
+        if ($resolved === null) {
             $output->writeln("<comment>无法确定 {$package} 的稳定版本系列（未发布/未安装、无 git tag、且未交互输入），跳过 branch-alias；</comment>");
             $output->writeln("<comment>其依赖若要求稳定版本（如 ^1.0），请手动在该包 composer.json 的 extra.branch-alias.{$aliasKey} 写入 &lt;系列&gt;.x-dev</comment>");
             return;
         }
+        [$series, $seriesSource] = $resolved;
 
         $alias = $series . '.x-dev';
 

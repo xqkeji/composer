@@ -49,7 +49,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | `xqkeji:table` | `table/{Class}.php`（继承 `Table`/`TreegridTable`，`-D` 加 `$isDrag`，**未传 `-D` 但列含 ordernum 自动等效 `-D`**；对**已存在**表格执行 `-D` 只补写/改写 `protected $isDrag = true;`，幂等不新建）+ `table/element/{El}.php`；`--foot=动作列表` 时另生成本表专属 `table/element/Foot{Class}.php`（继承 `ListFoot`、只声明 `$buttons`，见下节）；非 `-N` 时初始化 acl/menu/lang（**普通表默认动作集 `add/edit/admin/delete/change/b_delete`**，`b_delete` 必带：`ListFoot` 默认按钮为 `@AddButton` + `@BDeleteButton`，acl 不放行则点击无效），**控制器默认虚拟**（不落地 `controller/{Class}.php`，`-f` 才生成实体文件，树表例外；`-D`+ordernum 列时例外：复制 `src/example/src/controller/order/Admin.php` 模板落地 `controller/{表名蛇形}/Admin.php`，`$order=['ordernum'=>'asc']`，动作集加 `b_order`）；**默认同时用表格列自动派生同名 `form/{Class}.php`（`-F` 关闭，见下）** |
 | `xqkeji:element` | 单个 `form/element/{Class}.php` 或 `table/element/{Class}.php`（可创建/修改/删除，交互选类型与项目列表） |
 | `xqkeji:remove` | 删除 composer 模块（可选清理本地目录） |
-| `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地 |
+| `xqkeji:path` | 把本地包目录注册为 path 仓库（symlink，便于本地联调）；包未安装→`composer require`（走完整安装事件，含模块 `post-package-install` 钩子），包已安装→`composer update` 转本地；本地包无 `version` 时默认只在**宿主** `require` 写内联别名 `dev-<分支> as <系列>.x-dev`，不改本地包 |
 
 表单/表格类里最核心的字段：`$name`（蛇形配置名）、`$el`（元素/列引用数组）、表格另有 `$foot`（操作栏）与可选 `$isDrag`（拖拽排序）。
 
@@ -64,7 +64,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:table {name} [-e 列...] [-T 树] [-D 拖拽] [-N 不建控制器] [-f 建控制器文件] [-F 不建表单] [-a] [-r] [--foot 按钮动作] [--no-check-all] [--no-pager]` — 创建表格；控制器默认虚拟、并默认顺带自动建同名表单（见下）；`-a` 向**已存在**表格交互式追加列、`-r` 从**已存在**表格交互式删除列；对已存在表格单独执行 `-D` 只补写 `protected $isDrag = true;`（幂等，不新建）；带 `-e` 时首列自动规范为 `Id`、末列名不含 `delete` 时交互询问自动追加 `@EditDelete`；`-D` 时若无 ordernum 列且其他有效列（非 ordernum/Id/含 delete）≥2 个，交互询问自动补 `@Ordernum` 为最后数据列（`@EditDelete` 之前）；`-D`+ordernum 列同时具备时（**未传 `-D` 但列含 ordernum 会自动等效 `-D`**：表格类同样写入 `$isDrag = true`，无需用户再补设置一次）：acl.php/zh_cn.php 自动加入 `b_order`（批量排序）动作，并复制模板 `src/example/src/controller/order/Admin.php` 生成 `controller/{表名蛇形}/Admin.php`（`$order=['ordernum'=>'asc']`，已存在跳过）；**`-e` 不带值 = 交互循环逐个添加列**（结束后执行上述首尾规范化，树表除外）。
 - `xqkeji:element {name} [-c|-e|-r] [-y 类型] [-l 项目] [-D 默认] [-m 模型] [-f 过滤器] [-t 验证规则]` — 创建/修改/删除单个元素。`-f/-t` 仅表单元素生效（写入 `protected $filters` / `protected $vt`），表格模式会提示并忽略，`select_`/`ListSelectModel` 空子类不写这两个属性。
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
-- `xqkeji:path {package} {path} [--copy|--no-update|--require|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制。
+- `xqkeji:path {package} {path} [--copy|--no-update|--require|--local-alias|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`**，`--require` 可强制；版本别名默认写进**宿主** `require`（`--local-alias` 才改本地包，`--no-alias` 完全不做），见下节。
 - `xqkeji:doc [-o 输出目录]` — 反射导出 `docs/commands.json` + `commands.md`。
 
 ## `-a` 追加 / `-r` 删除元素（form/table）行为要点
@@ -131,6 +131,17 @@ class FootEmail extends BaseListFoot
 - 已存在表格的追加是**文本插入**（`insertFootButtons`）：定位 `protected $buttons = [`，按括号深度（跳过引号内容）找到配对 `]` 与末条目，把缺失条目插在其后（缩进沿用已有条目；空数组会展开成多行）；同动作条目（`'@AddButton'` 反查或内联 `'name' => '动作'`）已存在则跳过，文件其余内容与手工编辑（含 tooltip 里的 `<br/>`、方括号）原样保留。
 - 只写本模块的文件，**绝不写回 `'@X'`（base）文件**；遇到 1.1.53 之前生成的旧“三级内联”foot 文件（没有 `$buttons`）会按本次 `--foot` 给出的**完整**按钮列表把它整体重写为新结构（`rewriteLegacyFoot`，沿用文件原有的 `$name`；旧 `$el` 里的手工改动如自定义 tooltip 需自行搬回 `$buttons`），只带 `--foot` 不给列表时报错、不动文件。
 - 边界：树表（`-T`）的 foot 由 `src/example` 的 tree 模板生成（`FootTree.php`，复制时 `{TABELE_NAME}` 换成表名、`{中文名}` 换成表格中文名，`Tree` 后缀换成表名大驼峰），`--foot` 提示并跳过；模板自带 `protected $pager = [];`（树表不分页，`$checkAll` 保留框架默认全选框），因此这次改动之前生成的树表 foot 文件需手工补这一行（`ensureTreeElements` 对已存在文件幂等跳过，且树表不走 `--no-pager` 分支）；`-N` 只生成 foot 文件、不写 acl/lang；从 `@Foot` 切到 `~Foot{表}` 后，base foot 里其它按钮不再出现在这张表（需要就一并写进 `--foot`）。
+
+## `xqkeji:path` 的版本别名（默认落在宿主，不动本地包）
+
+path 仓库里**没有 `version` 字段**的本地包，Composer 用 `VersionGuesser` 按当前分支报出 `dev-<分支>`（`.git` 都没有时固定回退 `dev-main`；有 `.git` 但读不到分支=游离 HEAD/worktree 时报的是最近 tag）。这个 `dev-*` 版本不满足其它包对该包的 `^x` 稳定约束（例如所有 `xq-com-*` 与 `xq-app-admin` 都要求 `xqkeji/composer: ^1.0`），而 path 仓库是 canonical、不会回退到 packagist，于是解析直接失败。`src/command/PathCommand.php` 的三种处理：
+
+- **默认（`inlineAliasConstraint`）**：把别名写在**宿主项目自己的** `require` 里 —— `"包名": "dev-<分支> as <系列>.x-dev"`，本地包文件零改动。Composer 2.1+ 会把宿主根的内联别名作为一个等价版本加入解析池（`DependencyResolver/Pool` 由 `rootAliases` 生成 `AliasPackage`），因此其它包传递依赖的 `^x` 也能命中。
+- **`--local-alias`（`ensureBranchAlias`，1.1.43 起的旧默认）**：把 `<系列>.x-dev` 写进**本地包** `composer.json` 的 `extra.branch-alias.dev-<分支>`，宿主 `require` 保持 `*`；换任何宿主都自动生效，代价是改动本地包文件（整份 `composer.json` 会按 `JSON_PRETTY_PRINT` 重排）。
+- **`--no-alias`**：两边都不写，`require` 用 `*`（只适合本地包自带 `version`、或没人用稳定约束卡它）。与 `--local-alias` 互斥，同时给会报错退出。
+- 免别名的两种情形：本地包已有 `version` 字段，或已声明**当前分支**的 `extra.branch-alias`（path 仓库报出的版本已可用）→ `require` 写 `*` 并打印说明。游离 HEAD/worktree 同样跳过别名（猜分支会让根约束解析失败），只提示。
+- 分支名取自本地包 `.git/HEAD`；系列号（`major.minor`）优先级：① 该包已安装/已发布的最新稳定版（`registryLatestStable`，无需 git）② 本地 git 最新 tag（`detectLatestTag` 直接读 `.git/refs/tags` 与 `packed-refs`，不调 shell）③ 交互输入。每次运行按最新版本自动推进，宿主 `require` 里的旧别名会被覆盖并打印「由 … 改为 …」。
+- 其它行为不变：path 仓库以包名为键幂等覆盖，`minimum-stability: dev` + `prefer-stable: true` 兜底，`type: composer-plugin` 自动进 `allow-plugins`；包未安装→`composer require`（显式带上刚写入的约束，含内联别名）、已安装→`composer update`，`--require` 强制走 require，`--no-update` 只改 `composer.json` 并打印等价手动命令。
 
 ## 常见工作流示例
 

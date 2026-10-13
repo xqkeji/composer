@@ -42,7 +42,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 | 命令 | 主要产物 |
 | --- | --- |
 | `xqkeji:module` | 新模块目录（本地 `app/{module}` 或注册为 composer 包）；写菜单/语言 |
-| `xqkeji:controller` | `controller/{Class}.php`（默认虚拟控制器，`-f` 才落地文件）；初始化 `config/acl.php`、`menu.php`、`zh_cn.php` |
+| `xqkeji:controller` | `controller/{Class}.php`（默认虚拟控制器，`-f` 才落地文件）；初始化 `config/acl.php`、`menu.php`（图标按名字自动推荐，`-i` 覆盖）、`zh_cn.php` |
 | `xqkeji:model` | `model/{Class}.php` |
 | `xqkeji:action` | 控制器动作类；动作名写入语言文件 |
 | `xqkeji:form` | `form/{Class}.php`（继承 `Form`、`TabForm`（`-b`）或 `SearchForm`（`-s` 搜索表单，输入类元素带 `xq-s-字段,操作` 搜索规格、与 `-b/-g` 互斥））+ 所需 `form/element/{El}.php`；表单中文名入 lang |
@@ -56,7 +56,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 ## 命令速查（一句话；精确参数见 docs/commands.json）
 
 - `xqkeji:module {name} [-p 路径] [-t 中文名]` — 创建/注册模块。
-- `xqkeji:controller {name} [-e 入口] [-a auth|login] [-A 动作列表] [-t 中文名] [-f]` — 创建控制器 + 初始化 acl/menu/lang。
+- `xqkeji:controller {name} [-e 入口] [-a auth|login] [-A 动作列表] [-t 中文名] [-i 图标] [-f]` — 创建控制器 + 初始化 acl/menu/lang（菜单图标按名字自动推荐，见下节）。
 - `xqkeji:use {name} [-m|-c|-f|-t]` — 切换当前模块/控制器，或设置 form/table 模式。
 - `xqkeji:action {name} [-t 中文名]` — 创建控制器动作类；**预定义动作名统一小写**（`add`、`b_close`、`change_password`…，命令行大小写不敏感：`add`/`Add`/`ADD` 等价，匹配后规范为小写用于语言键与类名推导），生成的动作类文件仍为大驼峰（`add → Add.php`、`b_close → b/Close.php`），因为基类是大驼峰类名 `xqkeji\mvc\action\Add`、`xqkeji\mvc\action\b\Close`；自定义（非预定义）动作保持原始输入。`admin` 动作交互式询问默认排序 `$order`（逐个输入字段 + asc/desc，可多组）与默认查询条件 `$conditions`（逐个输入字段/操作符(= <> > >= < <= like regex，默认 =)/值，可多组；纯数字按数字、其余按字符串），有设置才写入对应 `protected $order = [...]` / `protected $conditions = [['字段', '操作符', 值], ...]` 属性，留空/非交互不写。
 - `xqkeji:model {name}` — 创建模型类。
@@ -131,6 +131,17 @@ class FootEmail extends BaseListFoot
 - 已存在表格的追加是**文本插入**（`insertFootButtons`）：定位 `protected $buttons = [`，按括号深度（跳过引号内容）找到配对 `]` 与末条目，把缺失条目插在其后（缩进沿用已有条目；空数组会展开成多行）；同动作条目（`'@AddButton'` 反查或内联 `'name' => '动作'`）已存在则跳过，文件其余内容与手工编辑（含 tooltip 里的 `<br/>`、方括号）原样保留。
 - 只写本模块的文件，**绝不写回 `'@X'`（base）文件**；遇到 1.1.53 之前生成的旧“三级内联”foot 文件（没有 `$buttons`）会按本次 `--foot` 给出的**完整**按钮列表把它整体重写为新结构（`rewriteLegacyFoot`，沿用文件原有的 `$name`；旧 `$el` 里的手工改动如自定义 tooltip 需自行搬回 `$buttons`），只带 `--foot` 不给列表时报错、不动文件。
 - 边界：树表（`-T`）的 foot 由 `src/example` 的 tree 模板生成（`FootTree.php`，复制时 `{TABELE_NAME}` 换成表名、`{中文名}` 换成表格中文名，`Tree` 后缀换成表名大驼峰），`--foot` 提示并跳过；模板自带 `protected $pager = [];`（树表不分页，`$checkAll` 保留框架默认全选框），因此这次改动之前生成的树表 foot 文件需手工补这一行（`ensureTreeElements` 对已存在文件幂等跳过，且树表不走 `--no-pager` 分支）；`-N` 只生成 foot 文件、不写 acl/lang；从 `@Foot` 切到 `~Foot{表}` 后，base foot 里其它按钮不再出现在这张表（需要就一并写进 `--foot`）。
+
+## 菜单图标自动推荐（`src/MenuIcon.php`，`-i` 覆盖）
+
+`xqkeji:controller` 写 `menu.php` 时不再一律给 `bi bi-list`，而是按名字推荐 bootstrap-icons 图标（纯离线关键词表，不调任何外部接口）：
+
+- 优先级：**`-i/--icon` 显式指定** > **中文名关键词**（`-t` 传入的标题，取命中的**最长**关键词，故「管理员」不会被「用户」抢先）> **控制器蛇形词根**（`user_login` → `user`，按词根出现顺序，先命中先用）> **`crc32(控制器名) % 兜底池`**（约 24 个中性图标；未命中关键词时也不再千篇一律，且同名恒同图标、可复现）。表与池都不可用才回退 `bi bi-list`。
+- 关键词表在 `MenuIcon::ICONS`（`图标 => [中文词…, 英文词根…]`），扁平表由 `keywordMap()` 惰性构建；覆盖用户/部门/权限/订单/商品/库存/财务/统计/日志/消息/文件/图片/课程/成绩/班级/物流/审批… 约 60 个业务域。
+- **表内图标名必须真实存在**：宿主 `vendor/xqkeji/xq-com-bootstrap-icons/src/font/bootstrap-icons.css` 共 1996 个 `.bi-*`，加新条目后按文件名逐个核对（如 `list-check`/`people`/`currency-dollar`/`ui-checks`/`box-seam` 存在，`ui-toggles`/`bankcoin`/`note-text` **不存在**）。
+- `-i` 三种写法等价并自动补全：`person` / `bi-person` / `bi bi-person` 都归一为 `bi bi-person`（`MenuIcon::normalize`）。
+- 图标推荐只在**确认要新增菜单项之后**执行并打印 `↻ 菜单图标: …（来源）`：`hasMenuUrl()` 命中已存在的 url 会先 return，所以你手工改过的图标永远不会被覆盖。
+- 树表也走这条链路：`Table` → `Controller::initControllerConfig`（新增末位可选 `$icon` 参数，默认 `''` = 自动推荐）。
 
 ## `xqkeji:path` 的版本别名（默认落在宿主，不动本地包）
 

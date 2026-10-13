@@ -21,6 +21,7 @@ class ControllerCommand extends BaseCommand
             ->addOption('auth', 'a', InputOption::VALUE_REQUIRED, '权限类型：auth（需要授权）或 login（需要登录），仅非 guest 入口有效（默认 auth）', 'auth')
             ->addOption('actions', 'A|s', InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, '动作列表，可多次指定或用逗号分隔（默认 admin,add,edit,delete,change,b_delete）')
             ->addOption('title', 't', InputOption::VALUE_REQUIRED, '控制器中文名称（写入菜单与语言文件）')
+            ->addOption('icon', 'i', InputOption::VALUE_REQUIRED, '菜单图标类样式（默认按中文名/控制器名关键词自动推荐，如 bi-person）')
             ->addOption('file', 'f', InputOption::VALUE_NONE, '创建控制器实体文件（默认不创建，使用虚拟控制器）')
             ->setHelp(<<<'EOF'
 创建控制器并配置权限、菜单和语言
@@ -33,10 +34,19 @@ class ControllerCommand extends BaseCommand
   <comment>-a, --auth=AUTH</comment>        权限类型：auth（默认，需授权）或 login（需登录），guest 入口忽略
   <comment>-A, -s, --actions=ACTIONS</comment>  动作列表，可多次指定或用逗号分隔
   <comment>-t, --title=TITLE</comment>      控制器中文名称，用于菜单标题与语言文件
+  <comment>-i, --icon=ICON</comment>        菜单图标类样式（默认自动推荐，见下方「菜单图标」）
   <comment>-f, --file</comment>             生成控制器实体文件（默认不生成，使用虚拟控制器）
 
 <info>默认动作及中文名：</info>
   admin 管理    add 添加    edit 编辑    delete 删除    change 修改    b_delete 批量删除
+
+<info>菜单图标：</info>
+
+  - admin 入口写 menu.php 时自动推荐 bootstrap-icons 图标，不会所有菜单都同一个 bi-list
+  - 优先级：-i 显式指定 > 中文名关键词 > 控制器名词根 > 名称哈希兜底池（同名恒同图标，可复现）
+  - 关键词表内置约 60 组业务域（用户/部门/权限/订单/商品/库存/财务/统计/日志/消息/课程/成绩…），命中时打印推荐来源
+  - -i 的三种写法等价：bi-person / bi bi-person / person；只对新增的菜单项生效，已存在的菜单项不覆盖（手工改过的图标安全）
+  - 不满意推荐值时：加 -i 覆盖，或生成后直接改 config/menu.php 里该项的 icon
 
 <info>用法示例：</info>
 
@@ -45,6 +55,13 @@ class ControllerCommand extends BaseCommand
 
   <comment># 指定中文名：菜单「学期管理」，语言键生成「添加学期」等</comment>
   composer xqkeji:controller term -t 学期
+
+  <comment># 图标自动推荐：中文名「学生」→ bi-mortarboard，「成绩」→ bi-clipboard-data-fill</comment>
+  composer xqkeji:controller student -t 学生
+
+  <comment># 手工指定图标（两种写法等价，跳过自动推荐）</comment>
+  composer xqkeji:controller term -t 学期 -i bi-calendar3
+  composer xqkeji:controller term -t 学期 -i=calendar3
 
   <comment># 自定义入口与权限类型</comment>
   composer xqkeji:controller course -e admin -a login
@@ -97,6 +114,7 @@ EOF
         $authEntry = (string) $input->getOption('entry');
         $authType = (string) $input->getOption('auth');
         $title = $input->getOption('title');
+        $icon = (string) $input->getOption('icon');
         $createFile = (bool) $input->getOption('file');
 
         // 验证 auth_type
@@ -117,7 +135,7 @@ EOF
         }
 
         $controller = new Controller($this->getIO(), $this->requireComposer());
-        $controller->createController($name, $authEntry, $authType, $actions, $createFile, $title);
+        $controller->createController($name, $authEntry, $authType, $actions, $createFile, $title, $icon);
 
         return 0;
     }

@@ -33,7 +33,7 @@ class Controller
     /**
      * 创建控制器（公开方法）
      */
-    public function createController(string $controllerName, string $authEntry = 'admin', string $authType = 'auth', array $actions = [], bool $createFile = false, ?string $title = null): void
+    public function createController(string $controllerName, string $authEntry = 'admin', string $authType = 'auth', array $actions = [], bool $createFile = false, ?string $title = null, string $icon = ''): void
     {
         // 验证控制器名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $controllerName)) {
@@ -93,7 +93,7 @@ class Controller
         if ($authEntry === 'admin') {
             // admin 入口：更新 ACL、menu 和 lang
             $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
-            $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle);
+            $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle, $icon);
             Lang::writeActions($this->io, $modulePath, $currentModule, $configName, $actions, $controllerTitle);
         } else {
             // guest 及自定义入口（member、teacher 等）：只更新 ACL，不处理 menu 和 lang
@@ -188,7 +188,7 @@ PHP;
     /**
      * 更新菜单配置
      */
-    private function updateMenuConfig(string $modulePath, string $controllerName, string $authEntry, string $controllerTitle = ''): void
+    private function updateMenuConfig(string $modulePath, string $controllerName, string $authEntry, string $controllerTitle = '', string $icon = ''): void
     {
         $menuFile = $modulePath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'menu.php';
         
@@ -210,7 +210,6 @@ PHP;
         $menuItem = [
             'url' => "{$controllerName}/admin",
             'title' => "{$subject}管理",
-            'icon' => 'bi bi-list',
         ];
         
         // 检测顶层遗留的非法数字键（旧版本错误写入的菜单项），仅提示不自动删除
@@ -248,6 +247,11 @@ PHP;
             $this->io->write("<comment>⊘ 菜单项已存在，跳过: {$menuItem['url']}</comment>");
             return;
         }
+
+        // 图标在确认要新增菜单项后才推荐：已存在的菜单项直接跳过，不覆盖手工改过的图标
+        list($menuItem['icon'], $iconSource) = MenuIcon::recommend($subject, $controllerName, $icon);
+        $this->io->write("<info>↻ 菜单图标: {$menuItem['icon']}（{$iconSource}）</info>");
+
         $menuConfig[$groupKey]['children'][] = $menuItem;
         
         // 写回文件
@@ -292,10 +296,11 @@ PHP;
         array $actions,
         string $controllerTitle,
         string $authEntry = 'admin',
-        string $authType = 'auth'
+        string $authType = 'auth',
+        string $icon = ''
     ): void {
         $this->updateAclConfig($modulePath, $authEntry, $configName, $actions, $authType);
-        $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle);
+        $this->updateMenuConfig($modulePath, $configName, $authEntry, $controllerTitle, $icon);
         Lang::writeActions($this->io, $modulePath, $this->context->getCurrentModule(), $configName, $actions, $controllerTitle);
     }
 

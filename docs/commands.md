@@ -102,6 +102,7 @@
 | `--auth` | -a | 需要值 | 否 | 权限类型：auth（需要授权）或 login（需要登录），仅非 guest 入口有效（默认 auth） |
 | `--actions` | -A|s | 需要值 | 是 | 动作列表，可多次指定或用逗号分隔（默认 admin,add,edit,delete,change,b_delete） |
 | `--title` | -t | 需要值 | 否 | 控制器中文名称（写入菜单与语言文件） |
+| `--icon` | -i | 需要值 | 否 | 菜单图标类样式（默认按中文名/控制器名关键词自动推荐，如 bi-person） |
 | `--file` | -f | 不需要值 | 否 | 创建控制器实体文件（默认不创建，使用虚拟控制器） |
 
 ### 帮助 / 示例
@@ -117,10 +118,19 @@
   -a, --auth=AUTH        权限类型：auth（默认，需授权）或 login（需登录），guest 入口忽略
   -A, -s, --actions=ACTIONS  动作列表，可多次指定或用逗号分隔
   -t, --title=TITLE      控制器中文名称，用于菜单标题与语言文件
+  -i, --icon=ICON        菜单图标类样式（默认自动推荐，见下方「菜单图标」）
   -f, --file             生成控制器实体文件（默认不生成，使用虚拟控制器）
 
 默认动作及中文名：
   admin 管理    add 添加    edit 编辑    delete 删除    change 修改    b_delete 批量删除
+
+菜单图标：
+
+  - admin 入口写 menu.php 时自动推荐 bootstrap-icons 图标，不会所有菜单都同一个 bi-list
+  - 优先级：-i 显式指定 > 中文名关键词 > 控制器名词根 > 名称哈希兜底池（同名恒同图标，可复现）
+  - 关键词表内置约 60 组业务域（用户/部门/权限/订单/商品/库存/财务/统计/日志/消息/课程/成绩…），命中时打印推荐来源
+  - -i 的三种写法等价：bi-person / bi bi-person / person；只对新增的菜单项生效，已存在的菜单项不覆盖（手工改过的图标安全）
+  - 不满意推荐值时：加 -i 覆盖，或生成后直接改 config/menu.php 里该项的 icon
 
 用法示例：
 
@@ -129,6 +139,13 @@
 
   # 指定中文名：菜单「学期管理」，语言键生成「添加学期」等
   composer xqkeji:controller term -t 学期
+
+  # 图标自动推荐：中文名「学生」→ bi-mortarboard，「成绩」→ bi-clipboard-data-fill
+  composer xqkeji:controller student -t 学生
+
+  # 手工指定图标（两种写法等价，跳过自动推荐）
+  composer xqkeji:controller term -t 学期 -i bi-calendar3
+  composer xqkeji:controller term -t 学期 -i=calendar3
 
   # 自定义入口与权限类型
   composer xqkeji:controller course -e admin -a login

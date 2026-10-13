@@ -80,7 +80,7 @@ class Table
      *                             从此这张表的按钮只在自己的文件里维护，不再动 base。
      * @param array{check_all?:bool,pager?:bool} $footOpts --no-check-all / --no-pager：false 时 foot 类补写空数组属性关掉全选框/分页条。
      */
-    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false, bool $withForm = true, bool $controllerFile = false, ?string $footArg = null, array $footOpts = []): void
+    public function createTable(string $tableName, array $elements = [], $input = null, $output = null, bool $isTree = false, bool $withController = true, bool $isDrag = false, bool $withForm = true, bool $controllerFile = false, ?string $footArg = null, array $footOpts = [], string $menuIcon = ''): void
     {
         // 验证表格名称（支持大小写字母、数字和下划线）
         if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $tableName)) {
@@ -278,7 +278,7 @@ class Table
                 . ($isTree ? "（以及模型类、树集合初始化）" : "") . "</comment>");
         } else {
             if ($isTree) {
-                $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn);
+                $this->ensureTreeController($modulePath, $currentModule, $tableName, $tableCn, $menuIcon);
                 // 树状表格：在 model 目录创建树模型类（继承 xqkeji\mvc\model\Tree）
                 $this->ensureTreeModel($modulePath, $currentModule, $tableName);
                 // 初始化树集合（建索引 + 根节点）：作为代码生成器的一部分直接执行，
@@ -292,7 +292,7 @@ class Table
                         break;
                     }
                 }
-                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn, $controllerFile, $dragWithOrder, $footButtons);
+                $this->ensureNormalController($modulePath, $currentModule, $tableName, $tableCn, $controllerFile, $dragWithOrder, $footButtons, $menuIcon);
             }
         }
 
@@ -1600,7 +1600,7 @@ PHP;
      *
      * @param string $tableCn 表格中文名（来自 resolveTreeTableCn，作为控制器显示名）
      */
-    private function ensureTreeController(string $modulePath, string $currentModule, string $tableName, string $tableCn): void
+    private function ensureTreeController(string $modulePath, string $currentModule, string $tableName, string $tableCn, string $menuIcon = ''): void
     {
         // 目录名 / 命名空间段统一使用全小写蛇形（如 test_tree），与框架命名约定一致
         $dirName = $this->toSnakeCase($tableName);
@@ -1659,7 +1659,10 @@ PHP;
             $modulePath,
             $configName,
             ['add', 'edit', 'admin', 'delete', 'change', 'move', 'subnode'],
-            $tableCn
+            $tableCn,
+            'admin',
+            'auth',
+            $menuIcon
         );
     }
 
@@ -1704,7 +1707,7 @@ PHP;
      * @param bool   $controllerFile 是否生成控制器实体文件（默认 false=虚拟控制器）
      * @param bool   $dragWithOrder  拖动排序表格且含 ordernum 列：动作集追加 b_order（acl + zh_cn 同步）
      */
-    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn, bool $controllerFile = false, bool $dragWithOrder = false, array $footButtons = []): void
+    private function ensureNormalController(string $modulePath, string $currentModule, string $tableName, string $tableCn, bool $controllerFile = false, bool $dragWithOrder = false, array $footButtons = [], string $menuIcon = ''): void
     {
         $className = $this->toCamelCase($tableName);
         $ctrlPath = $modulePath . DIRECTORY_SEPARATOR . 'controller' . DIRECTORY_SEPARATOR . $className . '.php';
@@ -1755,7 +1758,10 @@ PHP;
             $modulePath,
             $this->toSnakeCase($tableName),
             $actions,
-            $tableCn
+            $tableCn,
+            'admin',
+            'auth',
+            $menuIcon
         );
     }
 

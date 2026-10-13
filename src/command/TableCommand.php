@@ -23,6 +23,7 @@ class TableCommand extends BaseCommand
             ->addOption('drag', 'D', InputOption::VALUE_NONE, '创建可拖动排序的普通表格（继承 Table，并生成 protected $isDrag = true;；与 -T 互斥，树表忽略该参数）；若表格【已存在】则不新建，直接为该表格类补写 protected $isDrag = true;（幂等，可单独执行）。创建时未传 -D 但最终列中含 ordernum 元素也会自动按拖动排序处理（等效 -D，无需再设置一次）。创建时：元素中没有 ordernum 元素且其他有效列（非 ordernum/Id/含 delete）≥2 个 → 询问是否自动添加 @Ordernum 作为最后一个数据列（@EditDelete 之前）；-D 且元素有 ordernum 时（两者同时具备才判断）acl.php 动作集加入 b_order 并更新 zh_cn.php，同时复制模板生成控制器目录 controller/{表名蛇形}/Admin.php（继承 xqkeji\mvc\action\Admin，protected $order = [ordernum => asc] 默认排序，已存在则跳过不覆盖）')
             ->addOption('no-controller', 'N', InputOption::VALUE_NONE, '仅创建表格（表格类+元素），不创建控制器、不更新 acl.php/menu.php/zh_cn.php；树表同时不创建模型类与集合')
             ->addOption('controller-file', 'f', InputOption::VALUE_NONE, '生成控制器实体文件 controller/{Class}.php（默认不生成，使用虚拟控制器：只初始化 acl/menu/lang，只要 acl.php 有定义即生效）；仅对普通表格有效，树表始终复制动作类文件')
+            ->addOption('icon', 'i', InputOption::VALUE_REQUIRED, '菜单图标类样式（默认按表格中文名/表名关键词自动推荐，如 bi-person；写法 bi-person / bi bi-person / person 等价）；仅新增菜单项时生效，-N 不写菜单')
             ->addOption('no-form', 'F', InputOption::VALUE_NONE, '创建表格时【不】自动创建同名配套表单（默认会用表格列去掉 id/时间戳/操作列后追加 submit_reset，自动生成同名表单）')
             ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表格交互式追加列元素：先列出现有列，选择插入位置（某列之后/最前面），新元素按 xqkeji:element 流程创建')
             ->addOption('remove', 'r', InputOption::VALUE_NONE, '从【已存在】的表格删除列元素引用：列出 protected $el 现有列，输入逗号分隔的多个编号（如 3 或 2,5）一次删除多条；按整行文本方式删除引用行，文件其余内容与手工编辑（$foot、注释等）保留；被删的 ~本模块元素若在本模块所有表单/表格中再无引用，会询问是否顺带删除其元素类文件（默认否，@base 元素永不删）；与创建/追加/--foot 互斥，不碰 acl/menu/lang')
@@ -75,6 +76,14 @@ class TableCommand extends BaseCommand
   <comment># 需要控制器实体文件时才加 -f/--controller-file（生成 controller/Course.php）</comment>
   composer xqkeji:table course -e id,name,status,edit_delete -f
   composer xqkeji:table course -e id,name,status,edit_delete --controller-file
+
+  <comment># 菜单图标默认按【表格中文名】→【表名词根】自动推荐（如中文名「学生」→ bi bi-mortarboard），无需参数</comment>
+  composer xqkeji:table student -e id,name,edit_delete
+
+  <comment># 要固定图标时用 -i/--icon 覆盖（两种写法等价：可省 bi- 前缀与 bi 类名）</comment>
+  composer xqkeji:table course -e id,name,edit_delete -i bi-journal-bookmark
+  composer xqkeji:table course -e id,name,edit_delete -i=journal-bookmark
+  <comment>#   树表同样生效；-N（不写菜单）时该参数无意义；菜单项已存在则不覆盖其手工改过的图标</comment>
 
   <comment># 向【已存在】的表格交互式追加列元素（先列出现有列，再选插入位置）</comment>
   composer xqkeji:table User -a
@@ -212,6 +221,7 @@ EOF
         $withController = !$input->getOption('no-controller');
         $withForm = !$input->getOption('no-form');
         $controllerFile = $input->getOption('controller-file');
+        $menuIcon = (string) $input->getOption('icon');
 
         // --foot 底部按钮：带值 = 动作列表；只带 --foot 不带值 = 交互循环录入；完全没提 = null（不处理）
         $footRaw = $input->getOption('foot');
@@ -243,7 +253,7 @@ EOF
             return 1;
         }
 
-        $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag, $withForm, $controllerFile, $footArg, $footOpts);
+        $table->createTable($name, $elements, $input, $output, $isTree, $withController, $isDrag, $withForm, $controllerFile, $footArg, $footOpts, $menuIcon);
         
         return 0;
     }

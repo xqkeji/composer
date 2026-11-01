@@ -817,8 +817,10 @@
   - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
-  - 已存在同名 path 仓库则覆盖更新（幂等）
+  - 已存在同名 path 仓库则覆盖更新（幂等，重复运行内容不变就不打印改动）；指向同一目录、或那个目录里 composer.json 就是同名包的旧 path 条目会被改写掉，避免两个 path 源抢同一个包（抢的时候 Composer 取先注册的那条，你指的目录会被忽略）
+  - repositories 保持宿主原有的容器形式：原来是顺序数组就追加数组项，原来是以仓库名为键的对象就覆盖对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
+  - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
   - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本

@@ -58,8 +58,10 @@ class PathCommand extends BaseCommand
   - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
-  - 已存在同名 path 仓库则覆盖更新（幂等）
+  - 已存在同名 path 仓库则覆盖更新（幂等，重复运行内容不变就不打印改动）；指向同一目录、或那个目录里 composer.json 就是同名包的旧 path 条目会被改写掉，避免两个 path 源抢同一个包（抢的时候 Composer 取先注册的那条，你指的目录会被忽略）
+  - repositories 保持宿主原有的容器形式：原来是顺序数组就追加数组项，原来是以仓库名为键的对象就覆盖对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
+  - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
   - 默认自动运行上述 update/require；--no-update 可跳过
   - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
   - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本
@@ -196,6 +198,9 @@ EOF
             $output->writeln('');
             $manual = $useRequire ? "require \"{$package}:{$requireConstraint}\"" : "update {$package}";
             $output->writeln("<comment>已跳过自动执行，请手动运行：composer {$manual}</comment>");
+            if (!$useCopy && $installed) {
+                $output->writeln("<comment>若跑完 vendor 仍不是本地链接，需改用：composer remove {$package} && composer require \"{$package}:{$requireConstraint}\"</comment>");
+            }
             return 0;
         }
 
@@ -206,30 +211,125 @@ EOF
             $output->writeln("<info>包已安装，运行 composer update {$package} 将其转为本地路径包 ...</info>");
         }
 
-        $application = $this->getApplication();
-        $application->resetComposer();
-        $installer = $application->find($verb);
         // require 需显式带上刚写入的约束（可能是内联别名），避免被改写成解析出的具体版本；update 只接包名
         $installerInput = $useRequire
-            ? new ArrayInput([
-                'command' => 'require',
-                'packages' => ["{$package}:{$requireConstraint}"],
-                '--no-interaction' => true,
-            ])
-            : new ArrayInput([
-                'command' => 'update',
-                'packages' => [$package],
-                '--no-interaction' => true,
-            ]);
-        $code = $installer->run($installerInput, $output);
+            ? ['command' => 'require', 'packages' => ["{$package}:{$requireConstraint}"], '--no-interaction' => true]
+            : ['command' => 'update', 'packages' => [$package], '--no-interaction' => true];
+        $code = $this->runApplicationCommand($installerInput, $output);
 
         if ($code !== 0) {
             $output->writeln("<error>composer {$verb} 退出码 {$code}，请检查上方输出</error>");
             return $code;
         }
 
+        // 6) 校验 vendor 是否真的指向本地目录。update/require/reinstall 都按 vendor/composer/installed.json
+        //    里记录的来源安装，而内联别名让 path 包报出的版本与宿主已装版本相等，于是三者全部判定
+        //    “已是最新/无需改动”，vendor 里仍是原来那个普通目录。实测只有 remove + require 能换掉来源。
+        if (!$useCopy) {
+            $relinkCode = $this->relinkIfNeeded($package, $absPath, $requireConstraint, $isPlugin, $output);
+            if ($relinkCode !== 0) {
+                return $relinkCode;
+            }
+        }
+
         $output->writeln("<info>完成：{$package} 已" . ($useRequire ? '安装' : '更新') . "为本地路径包（" . ($useCopy ? '复制' : '符号链接') . "）</info>");
         return 0;
+    }
+
+    /**
+     * vendor/{包名} 解析后是否就是本地目录（Windows 上 Composer 建 junction，realpath 会跟到源目录；
+     * 复制出来的普通目录只会解析到自身）。
+     */
+    private function vendorPointsToLocal(string $package, string $absPath): bool
+    {
+        $real = realpath(getcwd() . '/vendor/' . $package);
+        if ($real === false) {
+            return false;
+        }
+        return strtolower(rtrim(str_replace('\\', '/', $real), '/'))
+            === strtolower(rtrim($absPath, '/'));
+    }
+
+    /**
+     * 没链上就自动补跑 composer remove + require（换掉 installed.json 里记的安装来源）。
+     */
+    private function relinkIfNeeded(string $package, string $absPath, string $requireConstraint, bool $isPlugin, OutputInterface $output): int
+    {
+        if ($this->vendorPointsToLocal($package, $absPath)) {
+            $output->writeln("<info>✓ vendor/{$package} 已指向 {$absPath}</info>");
+            return 0;
+        }
+
+        $output->writeln('');
+        $output->writeln("<comment>vendor/{$package} 还没指向 {$absPath}：composer 按 installed.json 记的来源安装，"
+            . "而别名让版本与已装的相等，update/require/reinstall 都认为无需重装。</comment>");
+        $output->writeln("<info>自动补跑 composer remove + require 以换成本地链接 ...</info>");
+
+        $code = $this->runApplicationCommand(['command' => 'remove', 'packages' => [$package], '--no-interaction' => true], $output);
+        if ($code !== 0) {
+            $output->writeln("<error>composer remove 退出码 {$code}，未继续；请手动运行："
+                . "composer require \"{$package}:{$requireConstraint}\"</error>");
+            return $code;
+        }
+
+        $code = $this->runApplicationCommand([
+            'command' => 'require',
+            'packages' => ["{$package}:{$requireConstraint}"],
+            '--no-interaction' => true,
+        ], $output);
+        if ($code !== 0) {
+            $output->writeln("<error>composer require 退出码 {$code}，包可能已被移除，请检查上方输出并手动补 require</error>");
+            return $code;
+        }
+
+        // remove 会连带清掉 config.allow-plugins 里的放行项，插件包要补回来
+        if ($isPlugin) {
+            $this->ensureAllowPlugins($package, $output);
+        }
+
+        if ($this->vendorPointsToLocal($package, $absPath)) {
+            $output->writeln("<info>✓ vendor/{$package} 已链接到 {$absPath}</info>");
+            return 0;
+        }
+
+        $output->writeln("<error>仍未链接：vendor/{$package} 实际指向 "
+            . (($real = realpath(getcwd() . '/vendor/' . $package)) === false ? '不存在' : str_replace('\\', '/', $real))
+            . "。Windows 无开发者模式/管理员权限时 Composer 会退化为复制，"
+            . "可加 --copy（放弃链接、每次改完重跑本命令同步）或开启开发者模式后重试</error>");
+        return 1;
+    }
+
+    /**
+     * 按名称在宿主 Application 里跑一条 composer 命令；每次先 resetComposer，让它重新读取改动后的 composer.json/lock。
+     */
+    private function runApplicationCommand(array $args, OutputInterface $output): int
+    {
+        $name = (string) $args['command'];
+        $application = $this->getApplication();
+        $application->resetComposer();
+        return $application->find($name)->run(new ArrayInput($args), $output);
+    }
+
+    /**
+     * 确保宿主 config.allow-plugins 仍放行该插件包（remove 之后该项可能被删）。
+     */
+    private function ensureAllowPlugins(string $package, OutputInterface $output): void
+    {
+        $projectFile = $this->getProjectComposerJson();
+        $project = json_decode((string) @file_get_contents($projectFile), true) ?: [];
+        if (isset($project['config']['allow-plugins'][$package])) {
+            return;
+        }
+        if (!isset($project['config']) || !is_array($project['config'])) {
+            $project['config'] = [];
+        }
+        if (!isset($project['config']['allow-plugins']) || !is_array($project['config']['allow-plugins'])) {
+            $project['config']['allow-plugins'] = [];
+        }
+        $project['config']['allow-plugins'][$package] = true;
+        if (file_put_contents($projectFile, json_encode($project, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n") !== false) {
+            $output->writeln("<comment>已在 allow-plugins 中重新放行插件包 {$package}</comment>");
+        }
     }
 
     /**
@@ -278,8 +378,12 @@ EOF
         if (self::isListArray($repositories)) {
             $list = [];
             foreach ($repositories as $item) {
-                if ($this->isSamePathRepo($item, $absPath) || (is_array($item) && array_keys($item) === [$package])) {
-                    $output->writeln("<comment>已移除 repositories 中指向 {$absPath} 的旧 path 项并重建</comment>");
+                if ($this->isIdenticalPathRepo($item, $absPath, $symlink)) {
+                    continue; // 本次要写的条目已在，摘出来再由末尾统一放回，内容没变就不声张
+                }
+                $stale = $this->stalePathRepoReason($item, $package, $absPath);
+                if ($stale !== null) {
+                    $output->writeln("<comment>已重写 repositories 中的旧 path 项（{$stale}）：{$package} → {$absPath}（symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
                     continue;
                 }
                 $list[] = $item;
@@ -288,11 +392,62 @@ EOF
             return $list;
         }
 
-        if (isset($repositories[$package])) {
+        foreach (array_keys($repositories) as $key) {
+            if ($key === $package) {
+                continue;
+            }
+            $stale = $this->stalePathRepoReason($repositories[$key], $package, $absPath);
+            if ($stale !== null) {
+                unset($repositories[$key]);
+                $output->writeln("<comment>已重写 repositories.{$key}（{$stale}）：{$package} → {$absPath}（symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
+            }
+        }
+        if (isset($repositories[$package]) && !$this->isIdenticalPathRepo($repositories[$package], $absPath, $symlink)) {
             $output->writeln("<comment>repositories.{$package} 已存在，覆盖为 {$absPath}</comment>");
         }
         $repositories[$package] = $entry;
         return $repositories;
+    }
+
+    /**
+     * 数组项是否已经与本次要写入的 path 条目完全一致（同 url 同 symlink），即重复运行无需声张。
+     */
+    private function isIdenticalPathRepo($item, string $absPath, bool $symlink): bool
+    {
+        return is_array($item)
+            && ($item['type'] ?? null) === 'path'
+            && ($item['symlink'] ?? true) === $symlink
+            && $this->isSamePathRepo($item, $absPath);
+    }
+
+    /**
+     * 该仓库项会不会跟本次注册抢同一个包：同 url、以包名为键的包装、或指向的目录里 composer.json 就是同名包。
+     * 命中返回原因文本，不相关返回 null。两个 path 源给出同名同版本时 Composer 取先注册的那条，
+     * 旧条目不清掉，后面的 require 会再把包装回原目录。
+     */
+    private function stalePathRepoReason($item, string $package, string $absPath): ?string
+    {
+        if (!is_array($item)) {
+            return null;
+        }
+        if (array_keys($item) === [$package]) {
+            return "键 {$package}";
+        }
+        if (($item['type'] ?? null) !== 'path') {
+            return null;
+        }
+        if ($this->isSamePathRepo($item, $absPath)) {
+            return '同一目录 ' . $item['url'];
+        }
+        $dir = $this->resolvePath((string) ($item['url'] ?? ''));
+        if ($dir === null) {
+            return null;
+        }
+        $cfg = json_decode((string) @file_get_contents($dir . '/composer.json'), true) ?: [];
+        if (($cfg['name'] ?? null) === $package) {
+            return '同名包 ' . $item['url'];
+        }
+        return null;
     }
 
     /**

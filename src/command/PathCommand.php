@@ -59,7 +59,8 @@ class PathCommand extends BaseCommand
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等，重复运行内容不变就不打印改动）；指向同一目录、或那个目录里 composer.json 就是同名包的旧 path 条目会被改写掉，避免两个 path 源抢同一个包（抢的时候 Composer 取先注册的那条，你指的目录会被忽略）
-  - repositories 保持宿主原有的容器形式：原来是顺序数组就追加数组项，原来是以仓库名为键的对象就覆盖对应键，两者都是 Composer schema 接受的结构
+  - 本次的 path 条目写在 repositories 最前（顺序数组占第 0 项，键值对象把包名键排到第一）：镜像源往往也提供同一个 dev-<分支> 且 reference 一模一样，排在它后面就永远输掉平局 —— 表现是安装日志 Extracting archive 而不是 Junctioning from，vendor 始终是远端副本
+  - repositories 保持宿主原有的容器形式：原来是顺序数组就写数组项，原来是以仓库名为键的对象就写对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
   - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
   - 该包被其它包传递依赖时，composer remove 会先自己重新解析一轮（内联别名随 require 行一起被删，于是装成远端的稳定版）再以“Removal failed, still present”报错退出 —— 这个非零退出不会中止流程，紧接着的 require 会把约束和内联别名写回来并把来源换成本地链接，最终以校验结果为准
@@ -300,6 +301,7 @@ EOF
             . ($real === false ? '不存在（remove 已卸载、require 未装回）' : '实际指向 ' . str_replace('\\', '/', $real))
             . '</error>');
         $output->writeln('<comment>该包被其它包依赖时 remove 不会真的卸载它，而版本与 reference 都没变时 require 也只判定"无需改动"。可用的处置（按推荐顺序）：</comment>');
+        $output->writeln('  0) 先看上方安装日志写的是 Extracting archive 还是 Junctioning from —— archive 说明这次赢的是别的源（镜像源也提供同一个 dev-<分支> 且 reference 相同）。本命令已把 path 条目写到宿主 repositories 的最前来赢这个平局；还抢不过就用 composer show ' . $package . ' -a 看有哪些源在供同一个版本');
         $output->writeln("  1) 在本地包 {$absPath} 里提交一次（哪怕空提交：git commit --allow-empty -m sync）再重跑本命令 —— reference 一变，composer 就会真的重装并 Junctioning from 本地目录");
         $output->writeln("  2) composer why {$package} 看是谁在依赖它，必要时把那个包也一并用 xqkeji:path 指到本地");
         $output->writeln("  3) 加 --copy 放弃链接（装的是副本，每次改完重跑本命令同步）；Windows 未开开发者模式/管理员权限时 Composer 本来也会退化为复制");
@@ -373,6 +375,10 @@ EOF
      * 这类"以源名为键"的单项）和以仓库名为键的对象（值必须是带 type 的仓库定义或 false）。
      * 把顺序数组的整数键改成 repo-0 之类的字符串键，会得到 {"repo-0": {"packagist.org": false}}，
      * 这种值既没有 type 也不是布尔，composer 直接判定 composer.json 不符合 schema 并拒绝运行。
+     *
+     * 两种形式都把本次的 path 条目放在**最前**：同名同版本的多个候选，Composer 取先注册的那条。宿主的
+     * 镜像/composer 源通常排在数组前面、也提供同一个 dev-<分支>（本地包已推送过，reference 完全相同），
+     * 追加在末尾就会被它抢走 —— 安装日志表现为 Extracting archive 而不是 Junctioning from，vendor 永远是副本。
      */
     private function registerPathRepository(array $project, string $package, string $absPath, bool $symlink, OutputInterface $output): array
     {
@@ -386,7 +392,7 @@ EOF
             $list = [];
             foreach ($repositories as $item) {
                 if ($this->isIdenticalPathRepo($item, $absPath, $symlink)) {
-                    continue; // 本次要写的条目已在，摘出来再由末尾统一放回，内容没变就不声张
+                    continue; // 本次要写的条目已在，先摘出来再放回队首，内容没变就不声张
                 }
                 $stale = $this->stalePathRepoReason($item, $package, $absPath);
                 if ($stale !== null) {
@@ -395,7 +401,9 @@ EOF
                 }
                 $list[] = $item;
             }
-            $list[] = $entry;
+            // 放队首而不是追加：同名同版本的候选 Composer 取先注册的那条，宿主的 composer 镜像源常在数组前面
+            // 且同样提供 dev-<分支>，追加在末尾就会输给镜像（表现为 Extracting archive 而不是 Junctioning from）。
+            $list = array_merge([$entry], $list);
             return $list;
         }
 
@@ -412,8 +420,9 @@ EOF
         if (isset($repositories[$package]) && !$this->isIdenticalPathRepo($repositories[$package], $absPath, $symlink)) {
             $output->writeln("<comment>repositories.{$package} 已存在，覆盖为 {$absPath}</comment>");
         }
-        $repositories[$package] = $entry;
-        return $repositories;
+        // 键序同样决定优先级：重建数组，把本次的包放在第一位
+        $repositories = array_diff_key($repositories, [$package => 1]);
+        return array_merge([$package => $entry], $repositories);
     }
 
     /**

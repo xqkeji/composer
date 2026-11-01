@@ -818,7 +818,8 @@
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
   - 已存在同名 path 仓库则覆盖更新（幂等，重复运行内容不变就不打印改动）；指向同一目录、或那个目录里 composer.json 就是同名包的旧 path 条目会被改写掉，避免两个 path 源抢同一个包（抢的时候 Composer 取先注册的那条，你指的目录会被忽略）
-  - repositories 保持宿主原有的容器形式：原来是顺序数组就追加数组项，原来是以仓库名为键的对象就覆盖对应键，两者都是 Composer schema 接受的结构
+  - 本次的 path 条目写在 repositories 最前（顺序数组占第 0 项，键值对象把包名键排到第一）：镜像源往往也提供同一个 dev-<分支> 且 reference 一模一样，排在它后面就永远输掉平局 —— 表现是安装日志 Extracting archive 而不是 Junctioning from，vendor 始终是远端副本
+  - repositories 保持宿主原有的容器形式：原来是顺序数组就写数组项，原来是以仓库名为键的对象就写对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
   - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
   - 该包被其它包传递依赖时，composer remove 会先自己重新解析一轮（内联别名随 require 行一起被删，于是装成远端的稳定版）再以“Removal failed, still present”报错退出 —— 这个非零退出不会中止流程，紧接着的 require 会把约束和内联别名写回来并把来源换成本地链接，最终以校验结果为准

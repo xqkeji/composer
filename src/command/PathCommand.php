@@ -18,7 +18,7 @@ class PathCommand extends BaseCommand
             ->setDescription('将 composer 包注册为本地路径包（path 仓库 + symlink）')
             ->addArgument('package', InputArgument::REQUIRED, '包名（如 xqkeji/composer）')
             ->addArgument('path', InputArgument::REQUIRED, '本地路径（包根目录，需包含 composer.json）')
-            ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非符号链接（symlink=false），适合无法创建符号链接的环境')
+            ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非链接（写进 path 仓库的 options.symlink=false，由 Composer 自己执行）')
             ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update/require')
             ->addOption('require', null, InputOption::VALUE_NONE, '强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包）')
             ->addOption('local-alias', null, InputOption::VALUE_NONE, '把版本别名写进【本地包】的 extra.branch-alias（会改动本地包 composer.json）；默认只写宿主的内联别名')
@@ -34,7 +34,7 @@ class PathCommand extends BaseCommand
   <comment># 指定绝对路径</comment>
   composer xqkeji:path xqkeji/composer F:/docker/code/php/composer
 
-  <comment># 使用复制而非符号链接（Windows 无开发者模式/无管理员权限时）</comment>
+  <comment># 不要链接，装副本（options.symlink=false，由 Composer 复制；改完源码需重跑本命令同步）</comment>
   composer xqkeji:path xqkeji/composer ../composer --copy
 
   <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）</comment>
@@ -54,7 +54,7 @@ class PathCommand extends BaseCommand
 
 <info>说明：</info>
 
-  - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，symlink=true 默认）
+  - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，options.symlink=true 默认）；建链还是复制交给 Composer，本命令不自己碰文件系统
   - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
   - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
   - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
@@ -63,9 +63,11 @@ class PathCommand extends BaseCommand
   - repositories 保持宿主原有的容器形式：原来是顺序数组就写数组项，原来是以仓库名为键的对象就写对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
   - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
-  - 该包被其它包传递依赖时，composer remove 会先自己重新解析一轮（内联别名随 require 行一起被删，于是装成远端的稳定版）再以“Removal failed, still present”报错退出 —— 这个非零退出不会中止流程，紧接着的 require 会把约束和内联别名写回来并把来源换成本地链接，最终以校验结果为准
+  - 该包被其它包传递依赖时 composer remove 换不了来源，两种表现都会遇到：内联别名跟着 require 行一起被删，而排在前面的 path 源是 canonical、只报 dev-<分支>，这轮解析以 "That repository is canonical ... not installable" 失败并把 composer.json 还原（别名写进本地包 extra.branch-alias 就不受这个影响，即 --local-alias）；别名够用、解析通过时，remove 卸完又会被依赖方装回来，照样 "Removal failed, still present"。这两种情况下紧接着的 require 都只打印 Nothing to modify（文件被还原后约束一字没变），所以别指望这轮能链上，按报错里的处置来
   - 默认自动运行上述 update/require；--no-update 可跳过
-  - 符号链接(symlink)下本地源码改动即时生效；Windows 需开启开发者模式或以管理员运行，否则请用 --copy
+  - --copy 写的是 path 仓库的 options.symlink=false：Composer 只从这个位置读开关（PathRepository 把 options 里的 symlink/relative 拷进 transport-options，PathDownloader 据此在"建链"和"镜像复制"之间选），写在仓库项顶层的 symlink 没有任何代码读取，等于没写。本命令 1.2.11 之前写在顶层，所以 --copy 从来没生效过；老宿主里那种顶层条目下次运行会被自动改写成 options 形式
+  - 链接由 Composer 建，跨平台不用你操心：Windows 用 mklink /J 建 junction（普通权限即可，不需要开发者模式/管理员），类 Unix 用真 symlink（那种环境才需要权限）。日志分别打印 Junctioning from / Symlinking from；建链失败会退化成 Mirroring from（复制），那不是本命令的失败，是平台的
+  - 符号链接下本地源码改动即时生效；不想用链接就加 --copy（装的是副本，每次改完要重跑本命令同步）
   - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本
   - 宿主内联别名对传递依赖同样有效：Composer 会把它作为一个等价版本加入解析池，别的项目 require 该包的 ^<系列> 也能命中
   - --local-alias：改为把 <系列>.x-dev 写进【本地包】composer.json 的 extra.branch-alias.dev-<分支>（旧默认行为；会改动本地包文件并按 4 空格重排 composer.json，好处是换任何宿主都自动生效）；--no-alias：两者都不写，require 用 *（仅适合本地包自带 version、或没人用稳定约束卡它的场景）
@@ -186,7 +188,7 @@ EOF
         $repoLabel = self::isListArray($project['repositories']) ? 'repositories[]' : "repositories.{$package}";
 
         $output->writeln("<info>已将 {$package} 注册为本地路径包：</info>");
-        $output->writeln("  {$repoLabel} = path, url={$absPath}, symlink=" . ($useCopy ? 'false' : 'true'));
+        $output->writeln('  ' . $repoLabel . ' = path, url=' . $absPath . ', options.symlink=' . ($useCopy ? 'false' : 'true'));
         $output->writeln("  require.{$package} = {$requireConstraint}");
         $output->writeln("  minimum-stability = dev, prefer-stable = true");
 
@@ -267,9 +269,10 @@ EOF
             . "而别名让版本与已装的相等，update/require/reinstall 都认为无需重装。</comment>");
         $output->writeln("<info>自动补跑 composer remove + require 以换成本地链接 ...</info>");
 
-        // remove 的退出码不能中止流程：该包若被其它包传递依赖，remove 会自己重新解析一轮（此时宿主 require 里的
-        // 内联别名跟着被删掉，于是解析到 packagist 的稳定版并解压安装），最后报
-        // "Removal failed, ... is still present" 退出码 2。真正换来源的是紧接着的 require，必须跑到。
+        // remove 的退出码不能中止流程：该包若被其它包传递依赖，remove 会先自己重新解析一轮（宿主 require 里的
+        // 内联别名跟着被删掉，path 源又是 canonical，这轮要么 "That repository is canonical ... not installable"
+        // 失败并还原 composer.json，要么卸不下来报 "Removal failed, ... is still present"），退出码 2。
+        // 两种情况这一步都换不了来源，但 require 仍要跑完 —— 包没被真卸掉时它是唯一还可能生效的动作。
         $removeCode = $this->runApplicationCommand(['command' => 'remove', 'packages' => [$package], '--no-interaction' => true], $output);
         if ($removeCode !== 0) {
             $output->writeln("<comment>composer remove 退出码 {$removeCode}（该包多半被其它包依赖所以没被卸干净），"
@@ -302,9 +305,10 @@ EOF
             . '</error>');
         $output->writeln('<comment>该包被其它包依赖时 remove 不会真的卸载它，而版本与 reference 都没变时 require 也只判定"无需改动"。可用的处置（按推荐顺序）：</comment>');
         $output->writeln('  0) 先看上方安装日志写的是 Extracting archive 还是 Junctioning from —— archive 说明这次赢的是别的源（镜像源也提供同一个 dev-<分支> 且 reference 相同）。本命令已把 path 条目写到宿主 repositories 的最前来赢这个平局；还抢不过就用 composer show ' . $package . ' -a 看有哪些源在供同一个版本');
-        $output->writeln("  1) 在本地包 {$absPath} 里提交一次（哪怕空提交：git commit --allow-empty -m sync）再重跑本命令 —— reference 一变，composer 就会真的重装并 Junctioning from 本地目录");
-        $output->writeln("  2) composer why {$package} 看是谁在依赖它，必要时把那个包也一并用 xqkeji:path 指到本地");
-        $output->writeln("  3) 加 --copy 放弃链接（装的是副本，每次改完重跑本命令同步）；Windows 未开开发者模式/管理员权限时 Composer 本来也会退化为复制");
+        $output->writeln("  1) 在本地包 {$absPath} 里提交一次（哪怕空提交：git commit --allow-empty -m sync）再重跑本命令 —— reference 一变，composer 就会真的重装并 Junctioning from 本地目录（夹具实测：dev-main af46c18 => dev-main 813fde9）");
+        $output->writeln("  2) 上面 remove 那步若报 \"That repository is canonical ... not installable\"，说明别的包用 ^x 稳定约束依赖 {$package}：改用 composer xqkeji:path {$package} {$absPath} --local-alias，把别名写进本地包的 extra.branch-alias，remove 删掉宿主 require 行时别名不会跟着丢");
+        $output->writeln("  3) composer why {$package} 看是谁在依赖它，必要时把那个包也一并用 xqkeji:path 指到本地");
+        $output->writeln("  4) 加 --copy 放弃链接（写进 path 仓库的 options.symlink=false，装的是副本，每次改完重跑本命令同步）。链接本来就交给 Composer 建：Windows 用 mklink /J 建 junction（普通权限就行，不需要开发者模式/管理员），类 Unix 才用真 symlink；日志出现 Mirroring from 说明确实退成了复制");
         return 1;
     }
 
@@ -379,10 +383,16 @@ EOF
      * 两种形式都把本次的 path 条目放在**最前**：同名同版本的多个候选，Composer 取先注册的那条。宿主的
      * 镜像/composer 源通常排在数组前面、也提供同一个 dev-<分支>（本地包已推送过，reference 完全相同），
      * 追加在末尾就会被它抢走 —— 安装日志表现为 Extracting archive 而不是 Junctioning from，vendor 永远是副本。
+     *
+     * 链接还是复制写在 `options.symlink`，不用自己判断平台：Composer 只认这个键
+     * （PathRepository 把 repoConfig['options'] 里 symlink/relative 两项塞进 transport-options，
+     * PathDownloader 据此在 STRATEGY_SYMLINK / STRATEGY_MIRROR 之间切换；Windows 走 mklink /J 建 junction，
+     * 类 Unix 走 symlink()）。顶层的 `symlink` 没有任何代码读取，写了等于没写 —— 老版本就在这里写，
+     * 所以 --copy 从来没生效过，而默认建链接只是因为那本来就是 Composer 的默认行为。
      */
     private function registerPathRepository(array $project, string $package, string $absPath, bool $symlink, OutputInterface $output): array
     {
-        $entry = ['type' => 'path', 'url' => $absPath, 'symlink' => $symlink];
+        $entry = ['type' => 'path', 'url' => $absPath, 'options' => ['symlink' => $symlink]];
         $repositories = $project['repositories'] ?? [];
         if (!is_array($repositories) || $repositories === []) {
             return [$package => $entry];
@@ -396,7 +406,7 @@ EOF
                 }
                 $stale = $this->stalePathRepoReason($item, $package, $absPath);
                 if ($stale !== null) {
-                    $output->writeln("<comment>已重写 repositories 中的旧 path 项（{$stale}）：{$package} → {$absPath}（symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
+                    $output->writeln("<comment>已重写 repositories 中的旧 path 项（{$stale}）：{$package} → {$absPath}（options.symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
                     continue;
                 }
                 $list[] = $item;
@@ -414,7 +424,7 @@ EOF
             $stale = $this->stalePathRepoReason($repositories[$key], $package, $absPath);
             if ($stale !== null) {
                 unset($repositories[$key]);
-                $output->writeln("<comment>已重写 repositories.{$key}（{$stale}）：{$package} → {$absPath}（symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
+                $output->writeln("<comment>已重写 repositories.{$key}（{$stale}）：{$package} → {$absPath}（options.symlink=" . ($symlink ? 'true' : 'false') . '）</comment>');
             }
         }
         if (isset($repositories[$package]) && !$this->isIdenticalPathRepo($repositories[$package], $absPath, $symlink)) {
@@ -426,13 +436,14 @@ EOF
     }
 
     /**
-     * 数组项是否已经与本次要写入的 path 条目完全一致（同 url 同 symlink），即重复运行无需声张。
+     * 数组项是否已经与本次要写入的 path 条目完全一致（同 url 同 options.symlink），即重复运行无需声张。
+     * 只认 options.symlink：老版本写在顶层，那个位置没人读，命中下面的 stalePathRepoReason 会被改写掉。
      */
     private function isIdenticalPathRepo($item, string $absPath, bool $symlink): bool
     {
         return is_array($item)
             && ($item['type'] ?? null) === 'path'
-            && ($item['symlink'] ?? true) === $symlink
+            && (($item['options']['symlink'] ?? null) === $symlink)
             && $this->isSamePathRepo($item, $absPath);
     }
 

@@ -133,14 +133,8 @@ EOF
             return 1;
         }
 
-        // 1) repositories：追加/覆盖 path 仓库（以包名为键，幂等）
-        $repositories = $this->normalizeRepositories($project['repositories'] ?? null);
-        $repositories[$package] = [
-            'type' => 'path',
-            'url' => $absPath,
-            'symlink' => !$useCopy,
-        ];
-        $project['repositories'] = $repositories;
+        // 1) repositories：追加/覆盖 path 仓库，并保持宿主原有的容器形式（顺序数组 / 键值对象）
+        $project['repositories'] = $this->registerPathRepository($project, $package, $absPath, !$useCopy, $output);
 
         // 2) require：追加/覆盖该包约束（默认是宿主侧内联别名，见 inlineAliasConstraint）
         if (!isset($project['require']) || !is_array($project['require'])) {
@@ -185,8 +179,10 @@ EOF
             return 1;
         }
 
+        $repoLabel = self::isListArray($project['repositories']) ? 'repositories[]' : "repositories.{$package}";
+
         $output->writeln("<info>已将 {$package} 注册为本地路径包：</info>");
-        $output->writeln("  repositories.{$package} = path, url={$absPath}, symlink=" . ($useCopy ? 'false' : 'true'));
+        $output->writeln("  {$repoLabel} = path, url={$absPath}, symlink=" . ($useCopy ? 'false' : 'true'));
         $output->writeln("  require.{$package} = {$requireConstraint}");
         $output->writeln("  minimum-stability = dev, prefer-stable = true");
 
@@ -264,25 +260,69 @@ EOF
     }
 
     /**
-     * 把现有 repositories（可能是顺序数组或键值对象）规整为以键索引的数组，
-     * 便于按包名幂等覆盖。
+     * 写入 path 仓库，并保持宿主 repositories 原有的容器形式。
+     *
+     * Composer 的 repositories 只接受两种结构：顺序数组（每项是仓库定义，或 {"packagist.org": false}
+     * 这类"以源名为键"的单项）和以仓库名为键的对象（值必须是带 type 的仓库定义或 false）。
+     * 把顺序数组的整数键改成 repo-0 之类的字符串键，会得到 {"repo-0": {"packagist.org": false}}，
+     * 这种值既没有 type 也不是布尔，composer 直接判定 composer.json 不符合 schema 并拒绝运行。
      */
-    private function normalizeRepositories($repositories): array
+    private function registerPathRepository(array $project, string $package, string $absPath, bool $symlink, OutputInterface $output): array
     {
-        if (!is_array($repositories)) {
-            return [];
+        $entry = ['type' => 'path', 'url' => $absPath, 'symlink' => $symlink];
+        $repositories = $project['repositories'] ?? [];
+        if (!is_array($repositories) || $repositories === []) {
+            return [$package => $entry];
         }
-        $result = [];
-        $i = 0;
-        foreach ($repositories as $key => $value) {
-            if (is_int($key)) {
-                $result['repo-' . $i] = $value;
-            } else {
-                $result[$key] = $value;
+
+        if (self::isListArray($repositories)) {
+            $list = [];
+            foreach ($repositories as $item) {
+                if ($this->isSamePathRepo($item, $absPath) || (is_array($item) && array_keys($item) === [$package])) {
+                    $output->writeln("<comment>已移除 repositories 中指向 {$absPath} 的旧 path 项并重建</comment>");
+                    continue;
+                }
+                $list[] = $item;
             }
-            $i++;
+            $list[] = $entry;
+            return $list;
         }
-        return $result;
+
+        if (isset($repositories[$package])) {
+            $output->writeln("<comment>repositories.{$package} 已存在，覆盖为 {$absPath}</comment>");
+        }
+        $repositories[$package] = $entry;
+        return $repositories;
+    }
+
+    /**
+     * 顺序数组判定（不依赖 PHP 8.1 的 array_is_list）。
+     */
+    private static function isListArray(array $arr): bool
+    {
+        $i = 0;
+        foreach ($arr as $key => $unused) {
+            if ($key !== $i++) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 数组项是否已经是同一 url 的 path 仓库（统一分隔符、去尾斜杠、忽略大小写后比较）。
+     */
+    private function isSamePathRepo($item, string $absPath): bool
+    {
+        if (!is_array($item) || ($item['type'] ?? null) !== 'path') {
+            return false;
+        }
+        $url = (string) ($item['url'] ?? '');
+        if ($url === '') {
+            return false;
+        }
+        return strtolower(rtrim(str_replace('\\', '/', $url), '/'))
+            === strtolower(rtrim(str_replace('\\', '/', $absPath), '/'));
     }
 
     /**

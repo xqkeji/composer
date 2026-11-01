@@ -152,7 +152,7 @@ path 仓库里**没有 `version` 字段**的本地包，Composer 用 `VersionGue
 - **`--no-alias`**：两边都不写，`require` 用 `*`（只适合本地包自带 `version`、或没人用稳定约束卡它）。与 `--local-alias` 互斥，同时给会报错退出。
 - 免别名的两种情形：本地包已有 `version` 字段，或已声明**当前分支**的 `extra.branch-alias`（path 仓库报出的版本已可用）→ `require` 写 `*` 并打印说明。游离 HEAD/worktree 同样跳过别名（猜分支会让根约束解析失败），只提示。
 - 分支名取自本地包 `.git/HEAD`；系列号（`major.minor`）优先级：① 该包已安装/已发布的最新稳定版（`registryLatestStable`，无需 git）② 本地 git 最新 tag（`detectLatestTag` 直接读 `.git/refs/tags` 与 `packed-refs`，不调 shell）③ 交互输入。每次运行按最新版本自动推进，宿主 `require` 里的旧别名会被覆盖并打印「由 … 改为 …」。
-- 其它行为不变：path 仓库以包名为键幂等覆盖，`minimum-stability: dev` + `prefer-stable: true` 兜底，`type: composer-plugin` 自动进 `allow-plugins`；包未安装→`composer require`（显式带上刚写入的约束，含内联别名）、已安装→`composer update`，`--require` 强制走 require，`--no-update` 只改 `composer.json` 并打印等价手动命令。
+- 其它行为不变：path 仓库**保持宿主 `repositories` 原有的容器形式**（`PathCommand::registerPathRepository`）——顺序数组就追加数组项（先按 url 去掉同一目录的旧 path 项，斜杠/尾斜杠/大小写归一后比较），键值对象就按包名覆盖键，完全没有 repositories 时才新建 `{包名: {...}}` 对象。Composer 只接受这两种结构，把整数键改名成 `repo-0` 会生成 `{"repo-0": {"packagist.org": false}}`（无 `type` 又不是布尔），宿主 `composer.json` 立刻被 schema 判非法、composer 自身拒绝启动，必须手工改回数组才能救回来。`minimum-stability: dev` + `prefer-stable: true` 兜底，`type: composer-plugin` 自动进 `allow-plugins`；包未安装→`composer require`（显式带上刚写入的约束，含内联别名）、已安装→`composer update`，`--require` 强制走 require，`--no-update` 只改 `composer.json` 并打印等价手动命令。
 
 ## 常见工作流示例
 

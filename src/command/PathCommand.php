@@ -2,15 +2,19 @@
 namespace xqkeji\composer\command;
 
 use Composer\Command\BaseCommand;
+use Composer\Util\Filesystem;
+use Composer\Util\ProcessExecutor;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use xqkeji\composer\ConfirmTrait;
 
 class PathCommand extends BaseCommand
 {
     use NormalizesShortOptions;
+    use ConfirmTrait;
 
     protected function configure()
     {
@@ -62,8 +66,8 @@ class PathCommand extends BaseCommand
   - 本次的 path 条目写在 repositories 最前（顺序数组占第 0 项，键值对象把包名键排到第一）：镜像源往往也提供同一个 dev-<分支> 且 reference 一模一样，排在它后面就永远输掉平局 —— 表现是安装日志 Extracting archive 而不是 Junctioning from，vendor 始终是远端副本
   - repositories 保持宿主原有的容器形式：原来是顺序数组就写数组项，原来是以仓库名为键的对象就写对应键，两者都是 Composer schema 接受的结构
   - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
-  - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就自动补跑 composer remove 包名 + composer require "包名:约束"。原因：安装来源取自 vendor/composer/installed.json 里记的那一条，而内联别名让 path 包报出的版本与宿主已装版本相等，于是 update/require/reinstall 都判定“已是最新”，只改 composer.json 并不会把 vendor 换成链接（--copy 不做这步校验，复制安装本来就没有链接）
-  - 该包被其它包传递依赖时 composer remove 换不了来源，两种表现都会遇到：内联别名跟着 require 行一起被删，而排在前面的 path 源是 canonical、只报 dev-<分支>，这轮解析以 "That repository is canonical ... not installable" 失败并把 composer.json 还原（别名写进本地包 extra.branch-alias 就不受这个影响，即 --local-alias）；别名够用、解析通过时，remove 卸完又会被依赖方装回来，照样 "Removal failed, still present"。这两种情况下紧接着的 require 都只打印 Nothing to modify（文件被还原后约束一字没变），所以别指望这轮能链上，按报错里的处置来
+  - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就按顺序用 Composer 自己的命令换来源，每步跑完都复查一次链接：① composer update 包名（lock 里还记着远端 dist 时这一步就建链；lock 已是 path 而 vendor 是普通目录时它只打印 Nothing to install，但会把本次仓库的 transport-options 写进 lock）② composer reinstall 包名（跳过解析直接重装，但照 installed.json 里那条旧 transport-options 装，上一次是 --copy 装的仍打印 Mirroring from）③ 包根本不在 installed.json 里才 composer require ④ 删掉 vendor/{包名} 那个复制出来的目录再 composer install —— 目录没了 composer 才发现这个包没装，改按 lock 里的 path dist + 本次 transport-options 重装，实测输出 Junctioning from（只删解析到自身的普通目录，已是指向别处的链接就绝不删）⑤ 还不成才询问是否在本地包做一次空提交（git commit --allow-empty）换掉 dist.reference 再 update —— Composer 只在版本/reference 真的变了才重装（--copy 不做这步校验，复制安装本来就没有链接）
+  - 不用 composer remove 换来源：该包被其它包传递依赖时 remove 会连宿主 require 行（连同内联别名）一起删掉再自己重解析一轮，要么以 "That repository is canonical ... not installable" 失败并把 composer.json 还原（之后的 require 必然空转），要么以 "Removal failed, ... is still present" 报错退出 —— 两种都换不了来源，只会多刷一屏错误
   - 默认自动运行上述 update/require；--no-update 可跳过
   - --copy 写的是 path 仓库的 options.symlink=false：Composer 只从这个位置读开关（PathRepository 把 options 里的 symlink/relative 拷进 transport-options，PathDownloader 据此在"建链"和"镜像复制"之间选），写在仓库项顶层的 symlink 没有任何代码读取，等于没写。本命令 1.2.11 之前写在顶层，所以 --copy 从来没生效过；老宿主里那种顶层条目下次运行会被自动改写成 options 形式
   - 链接由 Composer 建，跨平台不用你操心：Windows 用 mklink /J 建 junction（普通权限即可，不需要开发者模式/管理员），类 Unix 用真 symlink（那种环境才需要权限）。日志分别打印 Junctioning from / Symlinking from；建链失败会退化成 Mirroring from（复制），那不是本命令的失败，是平台的
@@ -203,7 +207,7 @@ EOF
             $manual = $useRequire ? "require \"{$package}:{$requireConstraint}\"" : "update {$package}";
             $output->writeln("<comment>已跳过自动执行，请手动运行：composer {$manual}</comment>");
             if (!$useCopy && $installed) {
-                $output->writeln("<comment>若跑完 vendor 仍不是本地链接，需改用：composer remove {$package} && composer require \"{$package}:{$requireConstraint}\"</comment>");
+                $output->writeln("<comment>若跑完 vendor 仍不是本地链接，依次再试：composer update {$package} → composer reinstall {$package}</comment>");
             }
             return 0;
         }
@@ -226,11 +230,10 @@ EOF
             return $code;
         }
 
-        // 6) 校验 vendor 是否真的指向本地目录。update/require/reinstall 都按 vendor/composer/installed.json
-        //    里记录的来源安装，而内联别名让 path 包报出的版本与宿主已装版本相等，于是三者全部判定
-        //    “已是最新/无需改动”，vendor 里仍是原来那个普通目录。实测只有 remove + require 能换掉来源。
+        // 6) 校验 vendor 是否真的指向本地目录。composer 的安装来源取 vendor/composer/installed.json 记的那一条，
+        //    版本与 reference 都没变时 update/require 都会判定“无需改动”，vendor 里仍是原来那个普通目录。
         if (!$useCopy) {
-            $relinkCode = $this->relinkIfNeeded($package, $absPath, $requireConstraint, $isPlugin, $output);
+            $relinkCode = $this->relinkIfNeeded($package, $absPath, $requireConstraint, $input, $output);
             if ($relinkCode !== 0) {
                 return $relinkCode;
             }
@@ -243,10 +246,15 @@ EOF
     /**
      * vendor/{包名} 解析后是否就是本地目录（Windows 上 Composer 建 junction，realpath 会跟到源目录；
      * 复制出来的普通目录只会解析到自身）。
+     * 必须先 clearstatcache：本进程里之前查过这个路径，PHP 的 realpath 缓存会一直返回旧结果 ——
+     * composer 刚把普通目录换成 junction 时就会因此误判"仍未链接"（实测：日志已输出 Junctioning from、
+     * 末尾再看 vendor 已经是本地目录，命令却报错退出）。
      */
     private function vendorPointsToLocal(string $package, string $absPath): bool
     {
-        $real = realpath(getcwd() . '/vendor/' . $package);
+        clearstatcache(true);
+        $vendorPath = $this->vendorPath($package) ?? getcwd() . '/vendor/' . $package;
+        $real = realpath($vendorPath);
         if ($real === false) {
             return false;
         }
@@ -255,9 +263,24 @@ EOF
     }
 
     /**
-     * 没链上就自动补跑 composer remove + require（换掉 installed.json 里记的安装来源）。
+     * vendor 没指向本地目录时，按固定顺序用 Composer 自己的命令换安装来源，每跑一步就复查一次链接：
+     *   ① composer update —— lock 里记的还是远端 dist 时，这一步就把来源换成 path 并输出 Junctioning from；
+     *      lock 已是 path 而 vendor 是普通目录时它判定"已是最新"，什么都不做（但会把本次的 path 仓库
+     *      transport-options 写进 lock，后面几步靠这份新记录才能建链）。
+     *   ② composer reinstall —— 跳过解析直接重装，但它按 vendor/composer/installed.json 里那条旧
+     *      transport-options 装，上一次是 --copy 装的照旧输出 Mirroring from。
+     *   ③ composer require —— 包根本不在 installed.json 里（前两步都无从下手）时才跑。
+     *   ④ 删掉 vendor/{包名} 那个复制出来的目录再 composer install —— 目录没了 composer 才发现这个包没装，
+     *      改按 lock 里的 path dist + 本次 transport-options 重装（实测：删目录 → Installing …: Junctioning from …，
+     *      同时把 installed.json 那份旧记录刷新）。只删解析到自身的普通目录；已是指向别处的链接就绝不删。
+     *   ⑤ 本地包空提交换 reference 后再 update —— 版本与 reference 都没变时 Composer 认为无需重装，
+     *      只有 reference 变了才会真的重装（夹具实测 dev-main af46c18 => 813fde9 → Junctioning from）。
+     *
+     * 不用 composer remove：该包被别的包传递依赖时，remove 会把宿主 require 行（连同内联别名）一起删掉再自己重解析一轮，
+     * 那轮要么以 "That repository is canonical ... not installable" 失败并把 composer.json 还原（之后的 require 必然空转），
+     * 要么以 "Removal failed, ... is still present" 报错退出 —— 两种都换不了来源，只会刷一屏错误。
      */
-    private function relinkIfNeeded(string $package, string $absPath, string $requireConstraint, bool $isPlugin, OutputInterface $output): int
+    private function relinkIfNeeded(string $package, string $absPath, string $requireConstraint, InputInterface $input, OutputInterface $output): int
     {
         if ($this->vendorPointsToLocal($package, $absPath)) {
             $output->writeln("<info>✓ vendor/{$package} 已指向 {$absPath}</info>");
@@ -265,51 +288,156 @@ EOF
         }
 
         $output->writeln('');
-        $output->writeln("<comment>vendor/{$package} 还没指向 {$absPath}：composer 按 installed.json 记的来源安装，"
-            . "而别名让版本与已装的相等，update/require/reinstall 都认为无需重装。</comment>");
-        $output->writeln("<info>自动补跑 composer remove + require 以换成本地链接 ...</info>");
+        $output->writeln("<comment>vendor/{$package} 还没指向 {$absPath}，用 Composer 自己的命令换安装来源：</comment>");
 
-        // remove 的退出码不能中止流程：该包若被其它包传递依赖，remove 会先自己重新解析一轮（宿主 require 里的
-        // 内联别名跟着被删掉，path 源又是 canonical，这轮要么 "That repository is canonical ... not installable"
-        // 失败并还原 composer.json，要么卸不下来报 "Removal failed, ... is still present"），退出码 2。
-        // 两种情况这一步都换不了来源，但 require 仍要跑完 —— 包没被真卸掉时它是唯一还可能生效的动作。
-        $removeCode = $this->runApplicationCommand(['command' => 'remove', 'packages' => [$package], '--no-interaction' => true], $output);
-        if ($removeCode !== 0) {
-            $output->writeln("<comment>composer remove 退出码 {$removeCode}（该包多半被其它包依赖所以没被卸干净），"
-                . '继续用 require 把来源换成本地路径</comment>');
+        $updateArgs = ['command' => 'update', 'packages' => [$package], '--no-interaction' => true];
+        if ($this->relinkStep($updateArgs, $package, $absPath, $output)) {
+            return 0;
         }
-
-        $code = $this->runApplicationCommand([
-            'command' => 'require',
-            'packages' => ["{$package}:{$requireConstraint}"],
-            '--no-interaction' => true,
-        ], $output);
-        if ($code !== 0) {
-            $output->writeln("<error>composer require 退出码 {$code}，包可能已被移除，请检查上方输出并手动补 require</error>");
-            return $code;
+        if ($this->relinkStep(['command' => 'reinstall', 'packages' => [$package], '--no-interaction' => true], $package, $absPath, $output)) {
+            return 0;
         }
-
-        // remove 会连带清掉 config.allow-plugins 里的放行项，插件包要补回来
-        if ($isPlugin) {
-            $this->ensureAllowPlugins($package, $output);
+        if (!$this->isPackageInstalled($package)
+            && $this->relinkStep(['command' => 'require', 'packages' => ["{$package}:{$requireConstraint}"], '--no-interaction' => true], $package, $absPath, $output)) {
+            return 0;
         }
-
-        if ($this->vendorPointsToLocal($package, $absPath)) {
-            $output->writeln("<info>✓ vendor/{$package} 已链接到 {$absPath}</info>");
+        if ($this->relinkByRemovingVendor($package, $absPath, $output)) {
             return 0;
         }
 
-        $real = realpath(getcwd() . '/vendor/' . $package);
+        if ($this->bumpReference($absPath, $input, $output) && $this->relinkStep($updateArgs, $package, $absPath, $output)) {
+            return 0;
+        }
+
+        $real = realpath($this->vendorPath($package) ?? getcwd() . '/vendor/' . $package);
         $output->writeln("<error>仍未链接：vendor/{$package} "
-            . ($real === false ? '不存在（remove 已卸载、require 未装回）' : '实际指向 ' . str_replace('\\', '/', $real))
+            . ($real === false ? '不存在（请跑一次 composer install 装回来）' : '实际指向 ' . str_replace('\\', '/', $real))
             . '</error>');
-        $output->writeln('<comment>该包被其它包依赖时 remove 不会真的卸载它，而版本与 reference 都没变时 require 也只判定"无需改动"。可用的处置（按推荐顺序）：</comment>');
-        $output->writeln('  0) 先看上方安装日志写的是 Extracting archive 还是 Junctioning from —— archive 说明这次赢的是别的源（镜像源也提供同一个 dev-<分支> 且 reference 相同）。本命令已把 path 条目写到宿主 repositories 的最前来赢这个平局；还抢不过就用 composer show ' . $package . ' -a 看有哪些源在供同一个版本');
-        $output->writeln("  1) 在本地包 {$absPath} 里提交一次（哪怕空提交：git commit --allow-empty -m sync）再重跑本命令 —— reference 一变，composer 就会真的重装并 Junctioning from 本地目录（夹具实测：dev-main af46c18 => dev-main 813fde9）");
-        $output->writeln("  2) 上面 remove 那步若报 \"That repository is canonical ... not installable\"，说明别的包用 ^x 稳定约束依赖 {$package}：改用 composer xqkeji:path {$package} {$absPath} --local-alias，把别名写进本地包的 extra.branch-alias，remove 删掉宿主 require 行时别名不会跟着丢");
-        $output->writeln("  3) composer why {$package} 看是谁在依赖它，必要时把那个包也一并用 xqkeji:path 指到本地");
-        $output->writeln("  4) 加 --copy 放弃链接（写进 path 仓库的 options.symlink=false，装的是副本，每次改完重跑本命令同步）。链接本来就交给 Composer 建：Windows 用 mklink /J 建 junction（普通权限就行，不需要开发者模式/管理员），类 Unix 才用真 symlink；日志出现 Mirroring from 说明确实退成了复制");
+        $output->writeln('<comment>先分辨上方日志：</comment>');
+        $output->writeln("  1) 是 Extracting archive → 赢的是别的源（镜像源也供同一个 dev-<分支> 且 reference 相同），用 composer show {$package} -a 核对来源");
+        $output->writeln("  2) 是 Mirroring from → Composer 建链失败退成了复制（本机 COMPOSER_MIRROR_PATH_REPOS=1 也会导致这个）");
+        $output->writeln("  3) 接受副本就用 composer xqkeji:path {$package} {$absPath} --copy，改完源码重跑本命令同步");
         return 1;
+    }
+
+    /**
+     * 删掉 vendor 里这个包的目录，再跑一次 composer install：
+     * update/reinstall 都以 vendor/composer/installed.json 为准，那份记录里还留着上一次的
+     * transport-options（symlink=false），所以①只会 "Nothing to install, update or remove"、②只会 Mirroring from；
+     * 而 composer.lock 里的 transport-options 是①刚按本次仓库配置重写的（symlink=true）。
+     * 目录被删掉后 composer 才发现这个包没装，转是按 lock 重装 —— 实测输出 Junctioning from 并把 installed.json 那份旧记录刷新。
+     */
+    private function relinkByRemovingVendor(string $package, string $absPath, OutputInterface $output): bool
+    {
+        $vendorPath = $this->vendorPath($package);
+        if ($vendorPath === null) {
+            return false;
+        }
+
+        if (is_dir($vendorPath)) {
+            $real = realpath($vendorPath);
+            if ($real === false
+                || strtolower(rtrim(str_replace('\\', '/', $real), '/')) !== strtolower(rtrim(str_replace('\\', '/', $vendorPath), '/'))) {
+                // 它是指向别处的链接，不是复制出来的普通目录：删它可能伤到那头的源码，交回人工处理
+                $output->writeln("<error>  vendor/{$package} 是指向 " . str_replace('\\', '/', (string) $real) . ' 的链接（不是复制出来的目录），本命令不动它</error>');
+                return false;
+            }
+            if (!(new Filesystem())->remove($vendorPath)) {
+                $output->writeln("<error>  删不掉 {$vendorPath}（可能被进程占用），跳过这一步</error>");
+                return false;
+            }
+            $output->writeln("<comment>  已删除 {$vendorPath}：installed.json 里那条旧 transport-options（symlink=false）还让 update/reinstall 认为无需改动</comment>");
+        }
+
+        return $this->relinkStep(['command' => 'install', '--no-interaction' => true], $package, $absPath, $output);
+    }
+
+    /**
+     * vendor/{包名} 的绝对路径（用 Composer 自己的 vendor-dir 配置，可能是自定义目录）。
+     */
+    private function vendorPath(string $package): ?string
+    {
+        try {
+            $vendorDir = $this->requireComposer()->getConfig()->get('vendor-dir');
+        } catch (\Throwable $e) {
+            return null;
+        }
+        $path = rtrim(str_replace('\\', '/', (string) $vendorDir), '/');
+        if (!preg_match('#^([a-zA-Z]:/|/)#', $path)) {
+            $path = rtrim(str_replace('\\', '/', (string) getcwd()), '/') . '/' . $path;
+        }
+        return $path . '/' . $package;
+    }
+
+    /**
+     * 跑一步换来源并复查链接；本机 composer 没有这个命令时跳过（老版本没有 reinstall）。
+     */
+    private function relinkStep(array $args, string $package, string $absPath, OutputInterface $output): bool
+    {
+        $name = (string) $args['command'];
+        if (!$this->applicationHasCommand($name)) {
+            $output->writeln("<comment>  本机 composer 没有 {$name} 命令，跳过</comment>");
+            return false;
+        }
+
+        $label = $name . (isset($args['packages']) ? ' ' . implode(' ', (array) $args['packages']) : '');
+        $output->writeln("<info>尝试 composer {$label} ...</info>");
+        $code = $this->runApplicationCommand($args, $output);
+        if ($this->vendorPointsToLocal($package, $absPath)) {
+            $output->writeln("<info>✓ composer {$label} 已把 vendor/{$package} 链接到 {$absPath}</info>");
+            return true;
+        }
+
+        $output->writeln("<comment>  composer {$label} 退出码 {$code}，vendor 仍未指向本地目录，换下一步</comment>");
+        return false;
+    }
+
+    /**
+     * 在本地包做一次空提交，把 path 仓库报出的 dist.reference 换掉（版本没变时这是唯一能让 composer 重装的开关）。
+     */
+    private function bumpReference(string $absPath, InputInterface $input, OutputInterface $output): bool
+    {
+        if (!file_exists($absPath . '/.git')) {
+            $output->writeln("<comment>  {$absPath} 不是 git 仓库（无 .git），没法用空提交换 reference</comment>");
+            return false;
+        }
+        if (!$input->isInteractive()) {
+            $output->writeln("<comment>  非交互模式：请在 {$absPath} 里执行 git commit --allow-empty -m sync 后重跑本命令</comment>");
+            return false;
+        }
+        $io = $this->getIO();
+        if (!$this->confirmIO($io, "composer 只在版本/reference 真的变了才重装。是否在 {$absPath} 里做一次空提交（git commit --allow-empty）换掉 reference？", false)) {
+            $output->writeln('<comment>  已跳过空提交</comment>');
+            return false;
+        }
+
+        $executor = new ProcessExecutor($io);
+        $message = 'chore: refresh dist reference for composer path link';
+        $gitOutput = '';
+        $code = $executor->execute('git commit --allow-empty -m ' . escapeshellarg($message), $gitOutput, $absPath);
+        if ($code !== 0) {
+            $output->writeln("<error>  空提交失败（git 退出码 {$code}）：" . trim($executor->getErrorOutput()) . '</error>');
+            return false;
+        }
+        $output->writeln("<info>  已在 {$absPath} 创建空提交：" . trim((string) $gitOutput) . '</info>');
+        return true;
+    }
+
+    /**
+     * 宿主 composer 是否装了某条命令（reinstall 是 Composer 2.x 才有的）。
+     */
+    private function applicationHasCommand(string $name): bool
+    {
+        $application = $this->getApplication();
+        if ($application === null) {
+            return false;
+        }
+        try {
+            $application->find($name);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**
@@ -321,28 +449,6 @@ EOF
         $application = $this->getApplication();
         $application->resetComposer();
         return $application->find($name)->run(new ArrayInput($args), $output);
-    }
-
-    /**
-     * 确保宿主 config.allow-plugins 仍放行该插件包（remove 之后该项可能被删）。
-     */
-    private function ensureAllowPlugins(string $package, OutputInterface $output): void
-    {
-        $projectFile = $this->getProjectComposerJson();
-        $project = json_decode((string) @file_get_contents($projectFile), true) ?: [];
-        if (isset($project['config']['allow-plugins'][$package])) {
-            return;
-        }
-        if (!isset($project['config']) || !is_array($project['config'])) {
-            $project['config'] = [];
-        }
-        if (!isset($project['config']['allow-plugins']) || !is_array($project['config']['allow-plugins'])) {
-            $project['config']['allow-plugins'] = [];
-        }
-        $project['config']['allow-plugins'][$package] = true;
-        if (file_put_contents($projectFile, json_encode($project, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n") !== false) {
-            $output->writeln("<comment>已在 allow-plugins 中重新放行插件包 {$package}</comment>");
-        }
     }
 
     /**

@@ -22,35 +22,20 @@ class UseCommand extends BaseCommand
             ->addOption('form', 'f', InputOption::VALUE_NONE, '设置为表单模式')
             ->addOption('table', 't', InputOption::VALUE_NONE, '设置为表格模式')
             ->setHelp(<<<'EOF'
-切换当前工作上下文（模块、控制器或模式）
+切换当前工作上下文（模块 / 控制器 / 模式），多数生成命令依赖它
 
 <info>用法示例：</info>
 
-  <comment># 切换到模块</comment>
-  composer xqkeji:use home
-  composer xqkeji:use home -m
+  composer xqkeji:use                 <comment># 不带参数 = 显示当前上下文</comment>
+  composer xqkeji:use home            <comment># 切模块（-m 是默认，可省略）</comment>
+  composer xqkeji:use user_type -c    <comment># 切控制器（user_type / UserType 等价，自动转大驼峰）</comment>
+  composer xqkeji:use -f              <comment># 表单模式；-t 为表格模式（决定 xqkeji:element 落到哪个目录）</comment>
 
-  <comment># 切换到控制器（支持小写加下划线，自动转换为大驼峰）</comment>
-  composer xqkeji:use user_type -c
-  composer xqkeji:use UserType -c
+<info>要点：</info>
 
-  <comment># 设置为表单模式（xqkeji:element 创建表单元素）</comment>
-  composer xqkeji:use -f
-
-  <comment># 设置为表格模式（xqkeji:element 创建表格元素）</comment>
-  composer xqkeji:use -t
-
-  <comment># 显示当前上下文</comment>
-  composer xqkeji:use
-
-<info>说明：</info>
-
-  - 不带参数时显示当前上下文
-  - 默认切换模块（-m 可省略）
-  - 使用 -c 切换控制器
-  - 使用 -f 设置为表单模式，-t 设置为表格模式
-  - 控制器名称支持小写加下划线（如 user_type），会自动转换为大驼峰命名（UserType）
-  - 切换控制器前必须先切换到模块
+  - 上下文持久化在 runtime/composer/context.php：当前模块、当前控制器、当前模式（form|table）
+  - 切控制器前要先有当前模块；-f/-t/-c 同时给出时只执行一件，顺序是表单模式 → 表格模式 → 控制器
+  - xqkeji:form 建完自动切到表单模式，xqkeji:table 建完自动切到表格模式
 
 EOF
             );

@@ -18,21 +18,18 @@ class ModelCommand extends BaseCommand
             ->setDescription('创建模型类')
             ->addArgument('name', InputArgument::OPTIONAL, '模型名称')
             ->setHelp(<<<'EOF'
-创建模型类
+创建模型类（当前模块的 model/{Class}.php，继承 xqkeji\mvc\model\Model）
 
 <info>用法示例：</info>
 
-  <comment># 创建模型类</comment>
-  composer xqkeji:model user
-  composer xqkeji:model user_type
-  composer xqkeji:model UserType
+  composer xqkeji:use -- edu
+  composer xqkeji:model user_type     <comment># user_type / UserType 等价，自动转大驼峰</comment>
 
-<info>说明：</info>
+<info>要点：</info>
 
-  - 模型名称支持大小写，自动转为大驼峰（如 user_type → UserType）
-  - 模型类创建在当前模块的 model/ 目录下
-  - 继承自 xqkeji\mvc\model\Model 类
-  - 需要先使用 xqkeji:use 切换到目标模块
+  - 建在【当前模块】的 model/ 目录下，先 xqkeji:use 切到目标模块
+  - 产物是 namespace app\{模块}\model 下继承 Model 的【空子类】，字段与方法按框架约定由基类提供
+  - 模型名只能字母开头 + 字母/数字/下划线；同名文件已存在会报错，不覆盖
 
 EOF
             );

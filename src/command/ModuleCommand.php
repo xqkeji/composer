@@ -20,45 +20,24 @@ class ModuleCommand extends BaseCommand
             ->addOption('path', 'p', InputOption::VALUE_REQUIRED, '本地路径（创建 composer 包模块时必须指定）')
             ->addOption('title', 't', InputOption::VALUE_REQUIRED, '模块中文名称（写入菜单与语言文件）')
             ->setHelp(<<<'EOF'
-创建新模块
+创建新模块（本地 app/ 模块或 composer 包模块），建完自动设为当前模块
 
 <info>用法示例：</info>
 
-  <comment># 创建本地模块到 app/ 目录</comment>
+  <comment># 本地模块 → 当前项目的 app/{模块名}/</comment>
   composer xqkeji:module home
 
-  <comment># 创建 composer 包模块到指定目录（--path / -p 三种写法等价）</comment>
-  composer xqkeji:module xqkeji/xq-app-home --path=F:/docker/code/php/
-  composer xqkeji:module xqkeji/xq-app-home -p=F:/docker/code/php/
+  <comment># composer 包模块：包名写法必须带 -p 指定包根目录，创建后自动软链接进 vendor</comment>
   composer xqkeji:module xqkeji/xq-app-home -p F:/docker/code/php/
 
-  <comment># 指定模块中文名：菜单与语言文件写入「教学管理」</comment>
+  <comment># -t 中文名写入 menu.php 与 lang/zh_cn.php</comment>
   composer xqkeji:module xqkeji/xq-app-edu -p F:/docker/code/php/ -t 教学
-  composer xqkeji:module xqkeji/xq-app-edu -p=F:/docker/code/php/ -t=教学
 
-  <comment># 选项可以放在任意位置</comment>
-  composer xqkeji:module --path=F:/docker/code/php/ xqkeji/xq-app-home
+<info>要点：</info>
 
-<info>选项：</info>
-
-  <comment>-p, --path=PATH</comment>    本地路径（创建 composer 包模块时必须指定）
-  <comment>-t, --title=TITLE</comment>  模块中文名称，写入 menu.php 与 lang/zh_cn.php
-
-<info>参数写法（四种等价）：</info>
-
-  composer xqkeji:module xq-app-edu -t=教学
-  composer xqkeji:module xq-app-edu -t 教学
-  composer xqkeji:module xq-app-edu -t教学
-  composer xqkeji:module xq-app-edu --title=教学
-
-<info>说明：</info>
-
-  - 本地模块（如 home）：创建到当前项目的 app/ 目录
-  - composer 包模块（如 xqkeji/xq-app-home）：必须指定 --path 参数
-  - composer 包模块会在指定路径创建包目录，并自动软链接到 vendor
-  - 模块名只能包含小写字母、数字和下划线
-  - composer 包模块会从包名提取模块名（xq-app-home → home）
-  - 创建后自动设置为当前模块
+  - 模块名只能是小写字母、数字、下划线；包名会提取模块名（xqkeji/xq-app-home → home）
+  - 短选项写法 -t值 / -t 值 / -t=值 / --title=值 等价，选项可放在任意位置
+  - 包模块做好后要让它被宿主以本地路径安装，用 xqkeji:path（见该命令帮助）
 
 EOF
             );

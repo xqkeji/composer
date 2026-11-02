@@ -18,95 +18,44 @@ class FormCommand extends BaseCommand
         $this->setName('xqkeji:form')
             ->setDescription('创建表单类')
             ->addArgument('name', InputArgument::OPTIONAL, '表单名称')
-            ->addOption('element', 'e', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '表单元素列表（可多次使用，或用逗号分隔：Username,Password）；只传 -e 不带任何元素值时进入交互循环逐个添加')
-            ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, 'Tab配置（可多次使用）')
-            ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '全局表单元素（在Tab之外）')
-            ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表单交互式追加元素：先列出现有元素，选择插入位置（某元素之后/最前面），新元素按 xqkeji:element 流程创建（select_ 前缀自动生成 SelectModel 子类）')
-            ->addOption('search', 's', InputOption::VALUE_NONE, '创建搜索表单（继承 xqkeji\form\SearchForm，自带 method=get 排版）：有输入的元素逐个交互询问【搜索字段（可 a|b|c 或）+ 搜索操作 like/eq/ne/gt/gte/lt/lte/in/nin/regex】，生成 [\'@X\', \'name\' => \'xq-s-字段,操作\'] 数组项；输入元素统一套 \'@search\' 模板（新建元素类写 $template 属性，复用元素在数组项内联 template）；无输入控件（Submit/Reset/Button/Hidden）不询问；可用 -e "元素=字段,操作" 内联免交互；与 -b/--tab、-g/--global 互斥')
-            ->addOption('remove', 'r', InputOption::VALUE_NONE, '从【已存在】的表单删除元素引用：列出 protected $el 现有元素（Tab 分组内的元素编号为 父.子，如 2.1），输入逗号分隔的多个编号（如 3 或 2,5.1）一次删除多条；按整行文本方式删除引用行，文件其余内容与手工编辑保留；被删的 ~本模块元素若在本模块所有表单/表格中再无引用，会询问是否顺带删除其元素类文件（默认否，@base 元素永不删）；与创建/追加互斥，不碰 acl/menu/lang')
+            ->addOption('element', 'e', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '元素：可多次或逗号分隔（-e Username,Password）；只给 -e 不带值则交互循环逐个添加')
+            ->addOption('tab', 'b', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '开启一个 Tab 分组（-b "基本信息"），其后的 -e 元素归入该组')
+            ->addOption('global', 'g', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '其后 -e 的元素放在 Tab 之外的全局区（仅 Tab 表单用）')
+            ->addOption('add', 'a', InputOption::VALUE_NONE, '向【已存在】的表单交互式追加元素：选插入位置后按 xqkeji:element 流程建元素')
+            ->addOption('search', 's', InputOption::VALUE_NONE, '创建搜索表单（继承 SearchForm，GET 提交）：逐个元素问【搜索字段,操作】并生成 xq-s- 数组项；与 -b/-g 互斥')
+            ->addOption('remove', 'r', InputOption::VALUE_NONE, '从【已存在】的表单按编号删除元素引用（可逗号分隔如 2,5.1），只动 $el 那一行文本')
             ->setHelp(<<<'EOF'
-创建表单类和表单元素
+创建表单类（表单 + 元素），建完自动切到表单模式
 
 <info>用法示例：</info>
 
-  <comment># 创建普通表单（无元素）</comment>
-  composer xqkeji:form User
+  <comment># 表单建在【当前模块】的 form/ 下，先切模块</comment>
+  composer xqkeji:use -- edu
 
-  <comment># 创建普通表单（带元素列表）</comment>
-  composer xqkeji:form User -e Username -e Password -e Email
+  <comment># 建表单：-e 可多次使用也可逗号分隔；只给 -e 不带值则交互循环逐个加元素</comment>
   composer xqkeji:form User -e Username,Password,Email
-
-  <comment># 只传 -e 不带元素值：进入交互循环逐个添加元素（每次问名称，加入后问是否继续；结束自动处理末尾 @SubmitReset）</comment>
   composer xqkeji:form User -e
 
-  <comment># 元素为 select 类型：蛇形或驼峰写法均可（如 select_dept 或 SelectDept），自动生成 SelectModel 空子类、不询问中文名</comment>
-  composer xqkeji:form Article -e title,select_dept,select_status
-  composer xqkeji:form Article -e title,SelectDept,SelectStatus
+  <comment># select_ 前缀元素免选类型，生成继承 SelectModel 的空子类（蛇形 select_dept / 驼峰 SelectDept 均可）</comment>
+  composer xqkeji:form Article -e title,select_dept,SelectStatus
 
-  <comment># 创建Tab表单（Tab英文名称自动生成）</comment>
-  composer xqkeji:form User -b "基本信息" -e Username -e Password -b "授权信息" -e Auth -e Csrf
+  <comment># Tab 表单（继承 TabForm）：-b 开一个分组，其后的 -e 归它；-g 之后为 Tab 之外的全局元素</comment>
+  composer xqkeji:form User -b "基本信息" -e username -e password -b "授权信息" -e auth -g -e submit_reset
 
-  <comment># 创建Tab表单（带全局元素）</comment>
-  composer xqkeji:form User -b "基本信息" -e username -e password -b "授权信息" -e auth -e csrf -g -e submit_reset
+  <comment># 搜索表单（继承 SearchForm，GET 提交）：会问【搜索字段/操作】，也可 -e "元素=字段,op" 内联免交互</comment>
+  composer xqkeji:form UserSearch -s -e "SearchKey=username|fullname,like" -e Status,SearchSubmit
 
-  <comment># 创建Tab表单（中文名称不加引号）</comment>
-  composer xqkeji:form User -b 基本信息 -e username -e password -b 授权信息 -e auth -e csrf
-
-  <comment># 创建搜索表单（继承 xqkeji\form\SearchForm；有输入的元素交互询问搜索字段与操作）</comment>
-  composer xqkeji:form UserSearch -s -e SearchKey,Status,SearchSubmit
-  <comment>#   SearchKey → 问字段(默认 search_key，输入 username|fullname)、问操作(默认 like)</comment>
-  <comment>#   Status → 问字段(默认 status)、问操作(默认 eq)；SearchSubmit → 无输入，直接引用</comment>
-
-  <comment># 搜索表单（-s）中的 select_ 元素：默认搜索字段自动去掉 select_ 并补 _id（外键列）</comment>
-  composer xqkeji:form SearchStudent -s -e select_section
-  <comment>#   SelectSection → 问字段(默认 section_id)、问操作(默认 eq)；末尾询问追加 @SearchSubmit（搜索表单专用提交按钮，非 @SubmitReset）</comment>
-
-  <comment># 内联搜索规格免交互（xq-s- 前缀可省略，操作可省默认 like/eq）</comment>
-  composer xqkeji:form UserSearch -s -e "SearchKey=username|fullname,like" -e "Status=status,eq" -e SearchSubmit
-  composer xqkeji:form UserSearch -s -e "SearchKey=xq-s-username|fullname,like"
-
-  <comment># 向【已存在】的表单交互式追加元素（先列出现有元素，再选插入位置）</comment>
+  <comment># 对【已存在】的表单：-a 交互追加元素、-r 按编号删引用（2,5.1 = 第 2 条与第 5 个 Tab 内的第 1 条）</comment>
   composer xqkeji:form User -a
-  composer xqkeji:form User --add
-
-  <comment># 从【已存在】的表单删除元素引用（列出编号，输入逗号分隔的多个编号一次删多条）</comment>
   composer xqkeji:form User -r
-  composer xqkeji:form User --remove
-  <comment>#   列出后输入 3 → 删第 3 条；输入 2,5.1 → 删第 2 条与第 5 个 Tab 内的第 1 个元素</comment>
-  <comment>#   若被删的是 ~本模块元素且本模块已无任何表单/表格引用它，会询问是否顺带删除元素类文件（默认否）</comment>
 
-<info>说明：</info>
+<info>要点：</info>
 
-  - 表单名支持大小写，自动转为大驼峰（如 user → User、user_login → UserLogin）
-  - 表单元素名支持小写加下划线或大驼峰，命令行时可以用小写加_或-的格式
-  - 表单类创建在当前模块的 form/ 目录下
-  - 表单元素创建在当前模块的 form/element/ 目录下
-  - 如果元素在 base 模块已存在，使用 @ElementName 引入
-  - 如果元素在当前模块已存在或新创建，使用 ~ElementName 引入
-  - 创建新元素时会交互式询问中文名称，已存在的元素不会询问
-  - select 元素支持两种写法：蛇形 select_dept 或驼峰 SelectDept（内部统一转蛇形后判断），只要元素名转蛇形后以 select_ 开头即视为 select 元素
-  - select 元素（如 select_dept / SelectDept）：自动在当前模块 form/element/ 下创建继承 xqkeji\form\element\SelectModel 的空元素类，类名转大驼峰（select_dept → SelectDept），类体为空、由 SelectModel 提供行为，且不询问中文名；表单中以 ~SelectDept 引用
-  - 若同名元素已存在于 base 或当前模块，则直接按 @SelectDept / ~SelectDept 引用，不再重复创建
-  - 表单元素通过 -e/--element 指定（可多次使用，也可用逗号分隔：-e Username,Password），元素名自动转为大驼峰
-  - 只传 -e 不带任何元素值（如 composer xqkeji:form User -e）：进入交互式循环添加模式，每次询问一个元素名称（留空结束），加入后询问是否继续添加下一个；循环结束后按下方规则处理末尾 @SubmitReset；--no-interaction 时报错退出；Tab 表单（-b/-g）不支持该模式
-  - -e 值可用引号包裹，引号内逗号分隔支持带空格：-e "User Name, Email"（无引号时逗号后请勿加空格，否则会被 shell 拆成多个参数）
-  - 带了 -e 时末尾自动补提交按钮：元素先统一解析为 @/~ 引用，若最后一个元素名不含 submit（不区分大小写），交互式询问是否自动追加末尾按钮作为最后一个元素（默认追加）；--no-interaction 时直接追加并提示；追加的按钮按表单类型区分【普通表单 → @SubmitReset（提交/重置）；搜索表单 -s → @SearchSubmit（搜索按钮）】；-b/-g 的 Tab 表单不做此检查（结构不同）；末元素已含 submit（如 @SearchSubmit、@SubmitReset）时不询问
-  - 使用 -b/--tab 创建Tab切换效果的表单（继承 TabForm）
-  - 使用 -s/--search 创建搜索表单：生成的类 use xqkeji\form\SearchForm 并 extends SearchForm，自带 $attrs（method=get + d-flex 行内排版，与手写搜索表单一致）；目录、$name 蛇形、@/~ 元素引用、select_ 约定、中文名入 lang、自动切表单模式均与普通表单相同；与同名普通表单会因类文件同名冲突（form/{Class}.php 已存在则报错），建议起名如 {控制器}Search
-  - 搜索表单元素规格：除无输入控件（类名或继承链以 Submit/Reset/Button/Hidden 结尾，如 @SearchSubmit、@SubmitReset，按普通字符串引用）外，每个元素的名字属性都写成 xq-s- 规格：$el 数组项 [ '@元素', 'name' => 'xq-s-字段|字段,操作' ]。字段多选用 | 分隔表示“或”搜索；操作符用词别名（GET 防 URL 污染）：like 模糊、eq =、ne <>、gt >、gte >=、lt <、lte <=、in、nin、regex
-  - 搜索规格交互规则：交互下逐个询问【搜索字段】（默认=元素名蛇形；select_ 前缀元素去掉 select_ 再补 _id，如 select_section → 默认 section_id、select_dept → dept_id，可直接回车）与【搜索操作】（文本类元素默认 like，其余默认 eq）；用 -e "元素=字段,操作" 内联指定则该元素免询问（xq-s- 前缀、操作符均可省略）；--no-interaction 且未内联时用默认值并提示
-  - 搜索表单元素统一使用 '@search' 模板（小写，与 base 模块 SearchKey 一致）：建 -s 表单时【新建】的元素类（含 select_ 子类）直接在类体内写 protected \$template = '@search';（$el 引用保持干净）；【复用】的既有元素（@X 或已有 ~X，及 -a 向搜索表单追加的元素）不改其类文件，在 $el 数组项内联 'template' => '@search'；元素继承链中已声明 '@search' 时两者都不再重复添加
-  - 向 SearchForm 用 -a 追加元素时同样会询问搜索字段与操作并插入数组项（现有列表中以 "@X name='xq-s-…'" 形式展示）
-  - -s 与 -b/-g 互斥：同时指定会报错退出（基类只能有一个）
-  - Tab英文名称自动生成：{表单名小写下划线}_tab{序号}（如 user_tab1、user_tab2）
-  - Tab中文名称可加引号也可不加引号
-  - 使用 -g/--global 添加Tab之外的全局元素
-  - 需要先使用 xqkeji:use 切换到目标模块
-  - 使用 -a/--add 向【已存在】的表单追加元素：先显示当前元素列表，输入编号选择在某个元素后插入（0/回车 = 插到第一个元素前面；选中 Tab 分组时会进入该 Tab 内部再选位置），随后按提示输入元素名并按 xqkeji:element 的流程创建（可交互选择类型、Select/Check/Radio 可交互输入项目列表）
-  - -a 追加时：元素名转蛇形后以 select_ 开头（如 select_dept）自动生成继承 SelectModel 的空子类且不询问类型；若同名元素已存在于 base 或当前模块则直接按 @/~ 引用，不重复创建；-a 与创建新表单互斥（带 -a 时只插入、不新建表单）
-  - 使用 -r/--remove 从【已存在】的表单删除元素引用：先按编号列出 protected \$el 的现有条目（Tab 分组显示为 [Tab] 名称（n 个元素），其内部元素递归编号为 父.子，如 2.1 表示第 2 个 Tab 里的第 1 个元素），随后输入逗号分隔的多个编号一次删除多条（如 3 或 2,5.1；留空取消）。删除是按【整行文本区间】移除引用行，表单文件里的其它属性、注释与手工编辑原样保留；选中 Tab 分组编号即删除整个分组（含其内部元素）
-  - -r 删除只动表单文件的 \$el，不碰 acl.php/menu.php/zh_cn.php，也不会反向删除控制器/元素；-r 与创建、追加互斥（不能与 -e/-b/-g/-a/-s 同用）
-  - -r 的元素类文件清理是可选项：被删引用若为 ~本模块元素，会在当前模块的 form/*.php 与 table/*.php 里复查该元素是否还有引用（表格的 \$el 与 \$foot 都算），仍被引用则保留并提示；确认无任何引用时才询问【是否顺带删除该元素类文件】，默认不删；@base 元素属于 base 模块，永不删除
+  - 表单名与元素名自动转大驼峰；元素在 base 已存在引用为 @Name，在本模块为 ~Name
+  - 带 -e 时末元素名不含 submit 会询问追加按钮：普通表单 @SubmitReset，搜索表单 -s 为 @SearchSubmit（Tab 表单不处理）
+  - -s 的输入元素统一套 '@search' 模板；select_ 元素的默认搜索字段去掉 select_ 再补 _id（select_section → section_id）
+  - -s 与 -b/-g 互斥；-r 与 -e/-b/-g/-a/-s 互斥
+  - 完整规则（xq-s- 规格与操作符别名、@search 的新建/复用两种写法、Tab 命名、-r 的元素文件清理）见仓库 AGENTS.md
 
 EOF
             );

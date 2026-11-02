@@ -27,25 +27,19 @@ class DocCommand extends BaseCommand
             ->setDescription('导出全部 xqkeji:* 命令清单为 docs/commands.json 与 docs/commands.md（供 AI/文档快速读懂，改命令后重跑刷新）')
             ->addOption('output-dir', 'o', InputOption::VALUE_OPTIONAL, '输出目录（默认为插件仓库根下的 docs/）')
             ->setHelp(<<<'EOF'
-反射导出全部命令的结构化清单，方便 AI 与文档快速读懂本生成器。
+反射导出全部 xqkeji:* 命令的定义为 docs/commands.json + docs/commands.md
 
 <info>用法示例：</info>
 
-  <comment># 生成 docs/commands.json + docs/commands.md（默认输出到插件仓库根的 docs/）</comment>
-  composer xqkeji:doc
+  composer xqkeji:doc                 <comment># 输出到本插件仓库根的 docs/</comment>
+  composer xqkeji:doc -o ../docs      <comment># 指定输出目录</comment>
 
-  <comment># 指定输出目录</comment>
-  composer xqkeji:doc -o ../docs
-  composer xqkeji:doc --output-dir=/path/to/dir
+<info>要点：</info>
 
-<info>说明：</info>
+  - 数据取自各命令【活的】 configure()（name/description/arguments/options/help），改完命令重跑一次即刷新，不要手工编辑 docs/
+  - 自动过滤 Console 全局选项（--help / --quiet / --verbose / --version / --ansi / --no-ansi / --no-interaction）
+  - 默认输出目录由本文件位置定位到插件仓库根，与在哪个工程里运行无关
 
-  - 清单数据直接来自各命令 configure() 中的 setName/setDescription/addArgument/addOption/setHelp，
-    新增选项或修改说明后重新运行本命令即可刷新，文档不会与代码脱节。
-  - commands.json：结构化（name/description/source/arguments/options/help），供程序与 AI 读取。
-  - commands.md：同一数据的可读版，含参数表与每个命令的完整 help。
-  - 会自动过滤 Console 内置全局选项（--help/--quiet/--verbose/--version/--ansi/--no-ansi/--no-interaction）。
-  - 默认输出到插件仓库自身根目录（本命令文件所在 src 的上一级）的 docs/，与在哪个工程里运行无关。
 EOF
             );
     }

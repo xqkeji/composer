@@ -21,33 +21,19 @@ class RemoveCommand extends BaseCommand
             ->addOption('path', 'p', InputOption::VALUE_REQUIRED, '本地包目录路径（删除后是否清理）')
             ->addOption('force', 'f', InputOption::VALUE_NONE, '强制删除，不询问确认')
             ->setHelp(<<<'EOF'
-删除 composer 模块
+删除 composer 包模块（清掉它在宿主与本地留下的全部痕迹）
 
 <info>用法示例：</info>
 
-  <comment># 删除 composer 模块（会清理所有相关配置）</comment>
   composer xqkeji:remove xqkeji/xq-app-home
+  composer xqkeji:remove xqkeji/xq-app-home -p F:/docker/code/php   <comment># 顺带删本地包源码目录（危险操作）</comment>
+  composer xqkeji:remove xqkeji/xq-app-home --force                 <comment># 常规确认不询问</comment>
 
-  <comment># 删除并清理本地源代码包目录（-p 指定包所在父目录）</comment>
-  composer xqkeji:remove xqkeji/xq-app-home --path=F:/docker/code/php
+<info>要点：</info>
 
-  <comment># 强制删除，不询问确认</comment>
-  composer xqkeji:remove xqkeji/xq-app-home --force
-
-<info>说明：</info>
-
-  - 该命令会完整清理 composer 模块的所有痕迹
-  - 清理项目 composer.json 中的 path repository 配置
-  - 清理项目 composer.json 中的 require 依赖
-  - 清理 config/composer.php 中的模块映射
-  - 删除 vendor 中的软链接
-  - 如果指定 --path，会验证本地包目录的 composer.json 包名，匹配后删除源代码包目录（危险操作）
-  - 包名不匹配时会警告并要求单独确认，--force 无法跳过此安全确认
-
-<info>与 composer remove 的区别：</info>
-
-  - composer remove 只会移除 require 依赖和 vendor 中的包
-  - xqkeji:remove 会额外清理 path repository、config/composer.php 和本地目录
+  - 清理四处：宿主 composer.json 的 require 与 path repository、config/composer.php 的
+    模块映射、vendor 里的软链接（composer remove 只清 require 和 vendor 包本体）
+  - 带 -p 时先核对那个目录里 composer.json 的包名，匹配才删目录；不匹配只警告并要求单独确认，这条安全确认 --force 也跳不过
 
 EOF
             );

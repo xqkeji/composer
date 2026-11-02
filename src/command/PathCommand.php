@@ -22,62 +22,45 @@ class PathCommand extends BaseCommand
             ->setDescription('将 composer 包注册为本地路径包（path 仓库 + symlink）')
             ->addArgument('package', InputArgument::REQUIRED, '包名（如 xqkeji/composer）')
             ->addArgument('path', InputArgument::REQUIRED, '本地路径（包根目录，需包含 composer.json）')
-            ->addOption('copy', null, InputOption::VALUE_NONE, '使用复制而非链接（写进 path 仓库的 options.symlink=false，由 Composer 自己执行）')
-            ->addOption('no-update', null, InputOption::VALUE_NONE, '仅修改 composer.json，不自动运行 composer update/require')
-            ->addOption('require', null, InputOption::VALUE_NONE, '强制使用 composer require 安装（默认自动判定：包未安装→require 走完整安装事件流，包已存在→update 转本地路径包）')
-            ->addOption('local-alias', null, InputOption::VALUE_NONE, '把版本别名写进【本地包】的 extra.branch-alias（会改动本地包 composer.json）；默认只写宿主的内联别名')
-            ->addOption('no-alias', null, InputOption::VALUE_NONE, '完全不做版本别名：宿主 require 写 *，也不动本地包（本地包若报成 dev-x，依赖它的稳定约束会解析失败）')
+            ->addOption('copy', null, InputOption::VALUE_NONE, '装副本而非链接（写 path 仓库的 options.symlink=false，由 Composer 执行）')
+            ->addOption('no-update', null, InputOption::VALUE_NONE, '只改 composer.json，不自动跑 update/require')
+            ->addOption('require', null, InputOption::VALUE_NONE, '强制走 composer require（默认自动判定：包未安装→require，已安装→update）')
+            ->addOption('local-alias', null, InputOption::VALUE_NONE, '版本别名写进【本地包】的 extra.branch-alias（会改动本地包 composer.json）；默认只写宿主的内联别名')
+            ->addOption('no-alias', null, InputOption::VALUE_NONE, '完全不做版本别名：宿主 require 写 *，也不动本地包')
             ->setHelp(<<<'EOF'
-将一个 composer 包注册为本地路径包（本地开发/联调用）
+将 composer 包注册为本地路径包（path 仓库），改本地源码即时生效
 
 <info>用法示例：</info>
 
-  <comment># 将本地包注册为 path 仓库（默认符号链接，自动 composer update）</comment>
-  composer xqkeji:path xqkeji/composer ../composer
-
-  <comment># 指定绝对路径</comment>
+  <comment># 默认建链接并自动安装/更新（相对路径与绝对路径均可）</comment>
   composer xqkeji:path xqkeji/composer F:/docker/code/php/composer
-
-  <comment># 不要链接，装副本（options.symlink=false，由 Composer 复制；改完源码需重跑本命令同步）</comment>
-  composer xqkeji:path xqkeji/composer ../composer --copy
-
-  <comment># 仅修改 composer.json，不自动更新（之后手动运行 composer update/require 包名）</comment>
-  composer xqkeji:path xqkeji/composer ../composer --no-update
-
-  <comment># 包尚未安装：自动改用 composer require 安装（触发与 require 相同的 post-package-install 等事件/插件激活）</comment>
   composer xqkeji:path xqkeji/xq-app-content ../xq-app-content
 
-  <comment># 强制走 composer require（即便包已存在也重新按 require 流程处理）</comment>
+  <comment># 装副本（改完源码要重跑本命令同步）/ 只改 composer.json / 强制走 require</comment>
+  composer xqkeji:path xqkeji/composer ../composer --copy
+  composer xqkeji:path xqkeji/composer ../composer --no-update
   composer xqkeji:path xqkeji/composer ../composer --require
 
-  <comment># 别名写进本地包的 extra.branch-alias（会改动本地包 composer.json）</comment>
+  <comment># 版本别名的落点：默认写宿主 require 的内联别名；--local-alias 改写入本地包；--no-alias 完全不写</comment>
   composer xqkeji:path xqkeji/composer ../composer --local-alias
-
-  <comment># 完全不做版本别名（本地包自带 version、或没有稳定约束卡它时）</comment>
   composer xqkeji:path xqkeji/composer ../composer --no-alias
 
-<info>说明：</info>
+<info>要点：</info>
 
-  - 在当前项目 composer.json 中追加 path 仓库（url=本地路径，options.symlink=true 默认）；建链还是复制交给 Composer，本命令不自己碰文件系统
-  - 同时在 require 中写入该包的约束（若已存在则覆盖）：本地包无 version 字段时写内联别名 "dev-<分支> as <系列>.x-dev"，否则写 "*"
-  - 自动确保 minimum-stability: dev 与 prefer-stable: true（dev 分支可解析）
-  - 若本地包 type 为 composer-plugin，自动在 allow-plugins 中放行该包
-  - 已存在同名 path 仓库则覆盖更新（幂等，重复运行内容不变就不打印改动）；指向同一目录、或那个目录里 composer.json 就是同名包的旧 path 条目会被改写掉，避免两个 path 源抢同一个包（抢的时候 Composer 取先注册的那条，你指的目录会被忽略）
-  - 本次的 path 条目写在 repositories 最前（顺序数组占第 0 项，键值对象把包名键排到第一）：镜像源往往也提供同一个 dev-<分支> 且 reference 一模一样，排在它后面就永远输掉平局 —— 表现是安装日志 Extracting archive 而不是 Junctioning from，vendor 始终是远端副本
-  - repositories 保持宿主原有的容器形式：原来是顺序数组就写数组项，原来是以仓库名为键的对象就写对应键，两者都是 Composer schema 接受的结构
-  - 自动选择安装方式：包【未安装】→ 运行 composer require 包名（安装新包，触发 composer require 的完整事件流，含模块包的 post-package-install 钩子与插件激活）；包【已安装】→ 运行 composer update 包名（把已存在的包转为本地路径包，触发 update 事件）；--require 可强制按 require 流程
-  - 装完会校验 vendor/{包名} 是否真的指向本地目录，没指向就按顺序用 Composer 自己的命令换来源，每步跑完都复查一次链接：① composer update 包名（lock 里还记着远端 dist 时这一步就建链；lock 已是 path 而 vendor 是普通目录时它只打印 Nothing to install，但会把本次仓库的 transport-options 写进 lock）② composer reinstall 包名（跳过解析直接重装，但照 installed.json 里那条旧 transport-options 装，上一次是 --copy 装的仍打印 Mirroring from）③ 包根本不在 installed.json 里才 composer require ④ 删掉 vendor/{包名} 那个复制出来的目录再 composer install —— 目录没了 composer 才发现这个包没装，改按 lock 里的 path dist + 本次 transport-options 重装，实测输出 Junctioning from（只删解析到自身的普通目录，已是指向别处的链接就绝不删）⑤ 还不成才询问是否在本地包做一次空提交（git commit --allow-empty）换掉 dist.reference 再 update —— Composer 只在版本/reference 真的变了才重装（--copy 不做这步校验，复制安装本来就没有链接）
-  - 不用 composer remove 换来源：该包被其它包传递依赖时 remove 会连宿主 require 行（连同内联别名）一起删掉再自己重解析一轮，要么以 "That repository is canonical ... not installable" 失败并把 composer.json 还原（之后的 require 必然空转），要么以 "Removal failed, ... is still present" 报错退出 —— 两种都换不了来源，只会多刷一屏错误
-  - 默认自动运行上述 update/require；--no-update 可跳过
-  - --copy 写的是 path 仓库的 options.symlink=false：Composer 只从这个位置读开关（PathRepository 把 options 里的 symlink/relative 拷进 transport-options，PathDownloader 据此在"建链"和"镜像复制"之间选），写在仓库项顶层的 symlink 没有任何代码读取，等于没写。本命令 1.2.11 之前写在顶层，所以 --copy 从来没生效过；老宿主里那种顶层条目下次运行会被自动改写成 options 形式
-  - 链接由 Composer 建，跨平台不用你操心：Windows 用 mklink /J 建 junction（普通权限即可，不需要开发者模式/管理员），类 Unix 用真 symlink（那种环境才需要权限）。日志分别打印 Junctioning from / Symlinking from；建链失败会退化成 Mirroring from（复制），那不是本命令的失败，是平台的
-  - 符号链接下本地源码改动即时生效；不想用链接就加 --copy（装的是副本，每次改完要重跑本命令同步）
-  - 版本别名：本地包 composer.json 没有 version 字段（典型 dev 分支）时，path 仓库报出的版本就是 dev-<分支>（无 .git 时 Composer 固定回退为 dev-main），它不满足其它包对该包的 ^x 稳定约束，而 path 仓库是 canonical、不会回退到别的源，于是解析直接失败。默认做法：把别名写进【宿主项目】的 require —— "dev-<分支> as <系列>.x-dev"（如 dev-main as 1.2.x-dev），本地包文件零改动；本地包处于游离 HEAD 或 worktree（读不到当前分支）时不做别名并提示，因为那时 Composer 报的是最近 tag 的版本
-  - 宿主内联别名对传递依赖同样有效：Composer 会把它作为一个等价版本加入解析池，别的项目 require 该包的 ^<系列> 也能命中
-  - --local-alias：改为把 <系列>.x-dev 写进【本地包】composer.json 的 extra.branch-alias.dev-<分支>（旧默认行为；会改动本地包文件并按 4 空格重排 composer.json，好处是换任何宿主都自动生效）；--no-alias：两者都不写，require 用 *（仅适合本地包自带 version、或没人用稳定约束卡它的场景）
-  - 本地包已自带 version 字段、或已声明当前分支的 extra.branch-alias 时，path 仓库报的版本已是可用版本，不再需要别名（require 写 *）
-  - 系列号优先级：① 该包已发布/已安装的最新稳定版本（与 composer 最新版本直接对应，无需 git）② 本地 git 最新 tag ③ 交互输入。每次运行按最新版本自动推进系列号（如 1.2.x-dev→1.3.x-dev）
-  - 分支名取自本地包的 .git/HEAD：内联别名模式下无 .git 直接按 dev-main（与 Composer 的回退一致），读到游离 HEAD/worktree 则跳过别名；--local-alias 模式下读不到分支会交互询问（默认 main）
+  - 写两处宿主配置：repositories 的 path 条目（本次排在最前，沿用宿主原有的数组/对象形式）
+    与 require 约束；并兜底 minimum-stability: dev + prefer-stable: true，
+    本地包 type 为 composer-plugin 时自动放行 allow-plugins
+  - 建链还是复制完全交给 Composer（只写仓库项的 options.symlink）：
+    Windows 建 junction，普通权限即可，不需要开发者模式或管理员
+  - 看安装日志判断结果：Junctioning/Symlinking from = 链接建成；
+    Mirroring from = 走了复制（查 options.symlink 或环境变量 COMPOSER_MIRROR_PATH_REPOS）；
+    Extracting archive = 输给别的源
+  - 本地包没有 version 字段时报的是 dev-<分支>，会被其它包的 ^x 稳定约束卡住；
+    默认把别名写进【宿主】require 的 "dev-<分支> as <系列>.x-dev"，本地包文件零改动
+  - 装完校验 vendor/{包} 是否真指向本地目录，没指向就自动跑换来源阶梯
+    （update → reinstall →（包没装才）require → 删 vendor 目录 + install → 空提交换 reference），
+    每步复查、链上就返回；不用 composer remove
+  - 阶梯每步为什么必要、系列号与分支名的取值顺序见仓库 AGENTS.md
 
 EOF
             );

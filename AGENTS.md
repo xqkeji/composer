@@ -11,11 +11,14 @@
 ## 文档真相源（先读这两个）
 
 - `docs/commands.json` — 全部命令的**结构化清单**（name / description / source / arguments / options / help），最适合程序与 AI 读取。
-- `docs/commands.md` — 同一数据的可读版（命令一览表 + 每命令参数表 + 完整 help/示例）。
+- `docs/commands.md` — 同一数据的可读版（命令一览表 + 每命令参数表 + help/示例）。
 
 两者由 `composer xqkeji:doc` 从各命令活的 `configure()`（`setName/setDescription/addArgument/addOption/setHelp`）
-反射生成。**改了命令参数或说明后重跑一次即可刷新，不要手工编辑 docs/。** 想了解任何命令的精确参数，先查 `docs/commands.json`，
-本文件的命令表只是一句话概览。
+反射生成。**改了命令参数或说明后重跑一次即可刷新，不要手工编辑 docs/。**
+
+**内容分工（改命令时照此摆放）**：`setDescription` / `addOption` 说明 / `setHelp` 是**给人在终端 `-h` 一屏看完**的概览，
+一条选项说明控制在一行、示例只留主流流程；**给 AI 与人的完整规则**（边界条件、互斥关系、幂等语义、非交互行为、为什么这么设计）
+写在本文件的对应小节里。所以精简 help 不会丢信息——丢的那部分本来就该在本文件。新增命令细节时优先补本文件，不要往 help 里堆长段落。
 
 ## 核心心智模型
 
@@ -66,6 +69,85 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - `xqkeji:remove {name} [-p 路径] [-f]` — 删除模块。
 - `xqkeji:path {package} {path} [--copy|--no-update|--require|--local-alias|--no-alias]` — 注册本地 path 包；**包未安装自动 `composer require`（触发安装事件），已安装则 `composer update`，随后校验 vendor 是否真指向本地目录、没指向就自动跑换来源阶梯（`update` → `reinstall` → 删 vendor 目录 + `install` → 空提交换 reference）**，`--require` 可强制；版本别名默认写进**宿主** `require`（`--local-alias` 才改本地包，`--no-alias` 完全不做），见下节。
 - `xqkeji:doc [-o 输出目录]` — 反射导出 `docs/commands.json` + `commands.md`。
+
+## `xqkeji:table` 细则（终端 help 已精简为一屏概览，完整规则以此为准）
+
+命名大小写转换、`@base` / `~本模块` 引用形式见上「命名与引用约定」；`-a`/`-r`、`-F` 自动派生表单、`-f` 虚拟控制器、`--foot`、`-i` 图标各有专节（下方）。这里收录终端 help 精简掉的分支与幂等语义。
+
+- **`-e` 的三种写法**：`-e id,Username`（逗号分隔）、`-e id -e Username`（可多次，`multiple values allowed`）、只给 `-e` 不带值 → 交互循环逐个加列（每次问列名，留空结束，加入后问是否继续）。值可引号包裹并在逗号后留空格 `-e "User Name, Login Time"`；**不加引号时逗号后不能有空格**，否则被 shell 拆成多个参数。`--no-interaction` 下走交互循环会报错退出。
+- **树表 `-T` 忽略 `-e`**：改用内置默认列（首 `@Id`、尾 `~EditDelete{表}`），因此交互循环与下面的首尾规范化都不作用于树表；`-T` 同时不支持 `--foot`（底栏由 tree 模板生成）。
+- **首尾自动规范化**（带了 `-e` 才做，元素先统一解析成 `@/~` 引用再判断）：**首列**必须是主键 `Id`——列表已含 `Id` 但不在首位 → 自动移到首位；完全不含 → 按 `xqkeji:element` 流程创建/复用 `Id` 并插到首位（**不询问**）。**末列**元素名不含 `delete` → 交互式询问是否追加操作列 `@EditDelete`（默认追加；非交互直接追加并提示）。
+- 新建元素会询问中文名，已存在的元素不询问；`select_` 前缀列免选类型、生成继承 `ListSelectModel` 的空子类，`-a` 追加时同样适用。
+- **`-D` 只多做一件事**：表格类仍继承 `Table`，额外生成 `protected $isDrag = true;`。序号列（`ordernum`）是拖拽排序的前端依赖（新顺序提交到 `/b-order`）：
+  - **自动等效 `-D`**：未传 `-D`，但最终列里含名称为 `ordernum` 的元素（`@Ordernum` / `~OrdernumXxx`）→ 同样写 `$isDrag = true`，且与下面 `b_order`/`Admin.php` 链路**同开同关**，无需再补一次设置。
+  - **自动补 `@Ordernum`**：`-D` 且列中【没有任何】`ordernum` 元素、其他有效列（排除 ordernum / Id / 名含 delete 的操作列）≥ 2 个 → 交互式询问是否把 `@Ordernum`（base 元素）加为最后一个数据列：末列已是删除类操作列时插在其**前**（`@EditDelete` 之前），否则插到末尾（之后仍走 `@EditDelete` 询问）；非交互默认添加并提示；已有 `ordernum` 列则不询问、不挪位置。
+  - **`b_order` 动作**：`-D` 与 `ordernum` 列**两者同时具备**才生效 —— `acl.php` 动作集追加 `b_order`（`add/edit/admin/delete/change/b_delete/b_order`），`zh_cn.php` 写 `{模块} {控制器} b_order title/success/failed` 与 `{模块} module {控制器} b_order auth`（中文名「批量排序{控制器}」）；`-N` 时不涉及 acl/lang。
+  - **`Admin.php` 模板**：同上条件复制 `src/example/src/controller/order/Admin.php` → `controller/{表名全小写蛇形}/Admin.php`（继承 `xqkeji\mvc\action\Admin`、`protected $order = ['ordernum' => 'asc']`），占位符 `{MODULE_NAME}`/`{CONTROLLER_NAME}` 自动替换，**目标已存在则跳过不覆盖**；该动作类目录与虚拟控制器并存（`-f` 的实体文件仍按 `-f` 自己的规则生成）。
+  - **对已存在表格执行 `-D`**（可只传表名，不需要 `-e`）：不新建表格，幂等补写 `$isDrag` —— 无该属性则在 `$el` 前插入 `protected $isDrag = true;`；`$isDrag = false` 改为 `true`；已是 `true` 跳过。树表执行 `-D` 会提示并跳过（`TreegridTable` 自带拖拽）。
+  - `-D` 与 `-T` 互斥：带 `-T` 时忽略 `-D`。
+- **`-N`**：只建表格类与元素，跳过控制器创建与 `acl.php`/`menu.php`/`zh_cn.php` 初始化；树表还同时跳过模型类与集合初始化。
+- **`-f` 只影响普通表格**：树表始终复制 `controller/{表名}/` 下的动作类（`admin`/`add`/`move` 等），因为拖拽与懒加载动作依赖实体文件。
+- **普通表默认动作集** `add/edit/admin/delete/change/b_delete`（与 `xqkeji:controller` 一致），`b_delete` 必带：base 的 `@Foot` 默认渲染「添加 + 删除」，前端 `xq-batch` 把选中行 POST 到 `…/{控制器}/b_delete`，acl 不放行则按钮点了无效。
+- **`-a` 与 `--foot` 的区别**：`-a` 维护的是**列**（`$el` 里的列元素），`--foot` 维护的是**底部操作栏按钮**（`$foot`）；两者都只动当前模块自己的文件，绝不写回 base。
+
+## `xqkeji:form` 细则（终端 help 已精简，完整规则以此为准）
+
+- **前提**：先用 `xqkeji:use` 切到目标模块；表单类落 `form/{Class}.php`、元素落 `form/element/{Class}.php`，建完自动切到**表单模式**。表单名自动转大驼峰（`user_login` → `UserLogin`），`$name` 用蛇形。
+- **`-e` 的三种写法**：`-e Username,Password`（逗号）、`-e Username -e Password`（可多次）、只给 `-e` 不带值 → 交互循环逐个加元素（每次问名称，留空结束，加入后问是否继续）。值可引号包裹并在逗号后留空格 `-e "User Name, Login Time"`；**不加引号时逗号后不能有空格**（会被 shell 拆成多个参数）。`--no-interaction` 下走交互循环会报错退出；**Tab 表单（`-b`/`-g`）不支持交互循环**。
+- **末尾按钮自动追加**（带了 `-e` 才做）：元素先统一解析成 `@/~` 引用，若**最后一个元素名不含 `submit`**（大小写不敏感）→ 交互式询问是否追加末尾按钮（默认追加），非交互直接追加并提示。按钮按表单类型区分：**普通表单 `@SubmitReset`（提交/重置），搜索表单 `-s` 为 `@SearchSubmit`**；末元素已含 submit（如 `@SearchSubmit`）不询问；**Tab 表单不做此检查**（结构不同）。
+- **`select_` 前缀元素**：蛇形 `select_dept` 与驼峰 `SelectDept` 等价（内部统一转蛇形后判断前缀），自动创建**继承 `xqkeji\form\element\SelectModel` 的空子类**（类名转大驼峰，类体为空、行为由基类提供、**不询问中文名**），表单中以 `~SelectDept` 引用；base 或当前模块已有同名元素时直接按 `@/~` 引用、不重复创建。
+- **Tab 表单 `-b`**：继承 `TabForm`；`-b "基本信息"` 开一个分组，**其后的 `-e` 元素归入该组**，可多次；Tab 英文名自动生成 `{表单名小写下划线}_tab{序号}`（`user_tab1`、`user_tab2`），中文名加不加引号均可。`-g/--global` 使其后的 `-e` 落在 **Tab 之外的全局区**（`-b … -e … -b … -e … -g -e submit_reset`）。
+- **搜索表单 `-s`**：`use xqkeji\form\SearchForm` + `extends SearchForm`，自带 `$attrs`（`method=get` + `d-flex` 行内排版）；目录、`$name` 蛇形、`@/~` 引用、`select_` 约定、中文名入 lang、自动切表单模式**均与普通表单相同**。与 `-b/-g` **互斥，同时指定报错退出**（基类只能有一个）。**与同名普通表单会因类文件同名冲突**（`form/{Class}.php` 已存在则报错），建议起名 `{控制器}Search`。元素规格与 `xq-s-`/`@search` 规则见下「搜索表单 `-s` 与 `xq-s-` 元素规格」。
+- **`-a`/`-r`**：见下「`-a` 追加 / `-r` 删除元素」专节（`-a` 与创建互斥、只插入不新建表单；`-r` 不能与 `-e/-b/-g/-a/-s` 同用）。
+
+## `xqkeji:element` 细则（终端 help 已精简，完整规则以此为准）
+
+- **落点由当前模式决定**：先 `xqkeji:use -f`（表单模式 → `form/element/`）或 `-t`（表格模式 → `table/element/`）。元素名自动转大驼峰（`user_name` → `UserName`）。
+- **动作**：不传 `-c/-e/-r` 时默认执行**创建**；`-e` 修改已存在元素（`-y=Select` 直接改类型，`-y` 不带值弹选择列表）；`-r` 删除会要求确认。
+- **`-y` 不带值 = 强制弹出类型选择列表**；`-y=类型名` 直接指定。
+- **选项类元素（Select/Check/Radio）**：`-l` 项目列表，格式 `值1|文本1,值2|文本2`，**也支持 `值=文本` 分隔符**；`-D` 默认值；`-m` 指定模型名（项目列表由模型动态加载，**需交互设置字段名**）。Select 自动 `class => 'form-select'`；Check/Radio 自动 `template => '@check'`。
+- **`-f/--filters`（仅表单元素）** 写入 `protected $filters = [...]`：多个用逗号分隔（`trim,upper`），**带参数的过滤器用 `名称=>参数1|参数2`**（`replace=> |-`、`regex=>/^a$/`、`remove=>ab`）。完整可选值（24 项）：`absint`、`alnum`、`alpha`、`bool`、`email`、`float`、`int`、`lower`、`lowerFirst`、`regex`、`remove`、`replace`、`special`、`specialFull`、`string`、`striptags`、`trim`、`upper`、`upperFirst`、`upperWords`、`url`、`html`。只传 `-f` 不带值时交互输入，**直接回车默认 `string`**。
+- **`-t/--vt`（仅表单元素）** 写入 `protected $vt = [[...], ...]`：**多条规则用分号分隔，规则参数用冒号分隔** —— `required;length:3,20` → `[ ['required'], ['length', '3,20'] ]`；前端规则可带 `$` 前缀（如 `$confirm`）。只传 `-t` 不带值时交互输入，**留空则不写该属性**。
+- `-f`/`-t` 未传时生成的元素类**不含**这两个属性（保持原有行为）；**表格模式（`xqkeji:use -t`）下传 `-f`/`-t` 会提示并忽略**；表格侧 `select_` 前缀与显式 `-y=ListSelectModel` 生成继承 `xqkeji\form\element\ListSelectModel` 的空子类（无 `$name`/`$text`/`$attrs`、不询问中文名），**也不写这两个属性**；表格模式下 `-e` 修改 `select_` 元素同样覆盖重写为空子类。
+
+## `xqkeji:action` 预定义动作全表与 `admin` 的 `$order`/`$conditions`
+
+动作建在**当前控制器**下（先 `xqkeji:use {模块}` + `xqkeji:use {控制器} -c`）。`-t 中文名` 写进 `lang/zh_cn.php` 的 `title`/`success`/`failed`/`auth` 四条键。
+
+- **预定义动作（统一小写；命令行大小写不敏感，命中后规范为小写用于语言键与类名推导）**：
+
+  `add` 添加、`admin` 管理、`captcha` 验证码、`change` 修改、`delete` 删除、`display` 查看、`edit` 编辑、`emailcode` 邮箱验证码、`export` 导出、`getoption` 获取选项、`login` 登录、`logout` 退出登录、`publish` 发布、`reg` 注册、`reset` 重置、`submenu` 子菜单、`subnode` 子节点、`b_close` 批量禁用、`b_delete` 批量删除、`b_open` 批量启用、`b_order` 批量排序、`change_password` 修改密码、`update_config` 更新配置、`update_statics` 更新静态文件
+
+- **预定义动作**继承 `xqkeji\mvc\action\` 下对应基类，生成**空类体**（行为完全由基类提供，**不要重写 `run()`**）；未收录的自定义动作名继承 `xqkeji\mvc\Action`，需自行实现 `run()`，动作名保持原始输入不规范化。
+- **类文件路径**始终大驼峰，名含 `_` 或 `-` 时第一段变子目录：`add` → `Add.php`、`b_close` → `b/Close.php`、`change_password` → `change/Password.php`（因为基类名也是大驼峰 `xqkeji\mvc\action\Add`、`xqkeji\mvc\action\b\Close`）。
+- **`admin` 动作额外交互**（其他动作没有这两问）：
+  - **默认排序 `$order`**：逐个输入排序字段名（如 `ordernum`，留空跳过）与该字段排序方式（`asc`/`desc`，默认 `asc`），可继续加多个字段（同名重复设置会被覆盖）；有设置才写入 `protected $order = ['字段' => 'asc|desc', ...];`，未设置不写该属性；**非交互直接跳过**。
+  - **默认查询条件 `$conditions`**：逐个输入三元组——字段名（如 `pos_id`，留空跳过）、操作符（`= / <> / > / >= / < / <= / like / regex`，默认 `=`）、值（**纯数字按数字写入，其余按字符串**），可继续加多条；有设置才写入 `protected $conditions = [['字段', '操作符', 值], ...];`（如 `[['pos_id', '=', 4], ['status', '=', 1]]`），未设置不写；**非交互直接跳过**。
+
+## `xqkeji:controller` 入口与配置矩阵
+
+- **默认动作集及中文名**（不带 `-A`/`-s` 时）：`admin` 管理、`add` 添加、`edit` 编辑、`delete` 删除、`change` 修改、`b_delete` 批量删除。
+- **入口（`-e`）决定写哪些配置**：
+
+  | 入口 | ACL | menu.php | zh_cn.php | 说明 |
+  | --- | --- | --- | --- | --- |
+  | `admin`（默认） | ✔ | ✔ | ✔ | 完整后台控制器：权限 + 菜单 + 语言 |
+  | `member` / `teacher` 等自定义入口 | ✔ | ✘ | ✘ | 只更新 ACL，不处理菜单与语言 |
+  | `guest` | ✔ | ✘ | ✘ | 直接把控制器和动作写入 ACL，**不区分 auth/login**（`-a` 无效），默认动作 `index` |
+
+- **`-a/--auth` 只有 `auth`（默认，需授权）与 `login`（需登录）两个值**，`guest` 入口忽略它。
+- **短参数区分大小写**：`-A` 与 `-s` 都是 `--actions`（可多次 `-A admin -A delete` 或逗号 `-A admin,delete`），**`-a` 是 `--auth`**。
+- **`-t 中文名`** 用于菜单标题与语言键（`-t 学期` → 菜单「学期管理」、语言「添加学期」等）。
+- **`-f/--file`** 才生成实体文件 `controller/{Class}.php`（继承 `xqkeji\mvc\Controller`）；**默认虚拟控制器**——只要 `acl.php` 里有该控制器与动作定义，框架按约定解析动作即可生效。
+- **菜单图标**：`-i` 显式指定 > 中文名关键词 > 名词根 > `crc32` 兜底池；只在**确认新增菜单项后**执行，已存在的 url 命中即 return，手工改过的图标不会被覆盖。详见「菜单图标自动推荐」。
+
+## `xqkeji:module` / `remove` / `model` / `use` / `doc` 要点
+
+- **`xqkeji:module {name}`**：本地模块（如 `home`）建到当前项目 `app/{模块名}/`；composer 包模块（`xqkeji/xq-app-home`）**必须** `-p` 指定包根父目录，创建包目录后自动软链接进 vendor，并从包名提取模块名（`xq-app-home` → `home`）。模块名只能小写字母、数字、下划线。`-t 中文名` 写进 `menu.php` 与 `lang/zh_cn.php`。创建后自动设为当前模块。选项可放任意位置，`-t值` / `-t 值` / `-t=值` / `--title=值` 等价（由 `NormalizesShortOptions` 归一）。包模块做好后要让宿主按本地路径安装，用 `xqkeji:path`。
+- **`xqkeji:remove {包名}`**：清掉四处痕迹——宿主 `composer.json` 的 `require` 与 path repository、`config/composer.php` 的模块映射、vendor 里的软链接（`composer remove` 只清第一处和 vendor 包本体）。`-p` 指定包所在父目录时**先核对那个目录里 `composer.json` 的 `name`**，匹配才删源码目录；不匹配只警告并要求**单独确认，这条安全确认 `--force` 跳不过**。`-f/--force` 只跳过常规确认。
+- **`xqkeji:model {name}`**：建在**当前模块**的 `model/` 下（先 `xqkeji:use` 切模块），产物是 `namespace app\{模块}\model` 下继承 `xqkeji\mvc\model\Model` 的**空子类**（字段与方法按框架约定由基类提供）。名只能字母开头 + 字母/数字/下划线，`user_type` / `UserType` 等价（自动转大驼峰）；**同名文件已存在会报错，不覆盖**。
+- **`xqkeji:use`**：上下文（当前模块 / 当前控制器 / 当前模式 form|table）持久化在 `runtime/composer/context.php`。不带参数 = **显示**当前上下文；默认 `-m` 切模块（可省略）；`-c` 切控制器（**要先有当前模块**）；`-f` 表单模式、`-t` 表格模式（决定 `xqkeji:element` 落到哪个目录）。控制器名支持 `user_type`（自动转 `UserType`）。`-f/-t/-c` 同时给出时**只执行一件**，优先级顺序为表单模式 → 表格模式 → 控制器。`xqkeji:form` 建完自动切表单模式、`xqkeji:table` 建完自动切表格模式。
+- **`xqkeji:doc [-o 目录]`**：反射各命令**活的** `configure()`（name/description/source/arguments/options/help）产出 `commands.json` + `commands.md`，自动过滤 Console 全局选项（`--help/--quiet/--verbose/--version/--ansi/--no-ansi/--no-interaction`）；默认输出目录由本命令文件位置定位到**插件仓库根**的 `docs/`，与在哪个工程运行无关。**不要手工编辑 docs/**。
 
 ## `-a` 追加 / `-r` 删除元素（form/table）行为要点
 
@@ -152,6 +234,8 @@ path 仓库里**没有 `version` 字段**的本地包，Composer 用 `VersionGue
 - **`--no-alias`**：两边都不写，`require` 用 `*`（只适合本地包自带 `version`、或没人用稳定约束卡它）。与 `--local-alias` 互斥，同时给会报错退出。
 - 免别名的两种情形：本地包已有 `version` 字段，或已声明**当前分支**的 `extra.branch-alias`（path 仓库报出的版本已可用）→ `require` 写 `*` 并打印说明。游离 HEAD/worktree 同样跳过别名（猜分支会让根约束解析失败），只提示。
 - 分支名取自本地包 `.git/HEAD`；系列号（`major.minor`）优先级：① 该包已安装/已发布的最新稳定版（`registryLatestStable`，无需 git）② 本地 git 最新 tag（`detectLatestTag` 直接读 `.git/refs/tags` 与 `packed-refs`，不调 shell）③ 交互输入。每次运行按最新版本自动推进，宿主 `require` 里的旧别名会被覆盖并打印「由 … 改为 …」。
+- **读不到分支时的差别**：内联别名（默认）模式下无 `.git` 直接按 `dev-main`（与 Composer 自己的回退一致），有 `.git` 但处于游离 HEAD / worktree 则**跳过别名**并提示（那时 Composer 报的是最近 tag 的版本，猜分支只会让根约束解析失败）；`--local-alias` 模式下读不到分支会**交互询问分支名（默认 `main`）**，因为别名键要写进本地包文件、必须由本命令确定分支。
+- **系列号定不出来时同样跳过别名**（内联模式）：未安装/未发布过、本地无 git tag、且非交互无法询问 → `require` 用 `*`，打印「请手动把该包写成 `dev-<分支> as <系列>.x-dev`」的提示（`resolveAliasSeries` 返回 null）。免别名的另一条：本地包已声明**当前分支**的 `extra.branch-alias`，报出的版本已可用 → 也是 `*`。
 - 其它行为不变：path 仓库**保持宿主 `repositories` 原有的容器形式**（`PathCommand::registerPathRepository`）——顺序数组就写数组项（先按 url 去掉同一目录的旧 path 项，斜杠/尾斜杠/大小写归一后比较），键值对象就按包名写键，完全没有 repositories 时才新建 `{包名: {...}}` 对象；**两种形式都把本次条目排在最前**（数组占第 0 项、对象里包名键排第一），原因见下条。Composer 只接受这两种结构，把整数键改名成 `repo-0` 会生成 `{"repo-0": {"packagist.org": false}}`（无 `type` 又不是布尔），宿主 `composer.json` 立刻被 schema 判非法、composer 自身拒绝启动，必须手工改回数组才能救回来。`minimum-stability: dev` + `prefer-stable: true` 兜底，`type: composer-plugin` 自动进 `allow-plugins`；包未安装→`composer require`（显式带上刚写入的约束，含内联别名）、已安装→`composer update`，`--require` 强制走 require，`--no-update` 只改 `composer.json` 并打印等价手动命令。
 - **链接/复制的开关只认 `options.symlink`**（1.2.11 起写在仓库项的 `options` 里，不再写顶层）：`PathRepository` 只把 `repoConfig['options']` 里的 `symlink`/`relative` 拷进 `transport-options`（PathRepository.php:188），`PathDownloader::computeAllowedStrategies()` 据此在 STRATEGY_SYMLINK（Windows `mklink /J` 建 junction、类 Unix `symlink()`）与 STRATEGY_MIRROR（复制）之间切换。**顶层的 `symlink` 全仓无人读取** —— 1.2.10 及以前写的是顶层，所以 `--copy` 从来没生效过（默认建链接只是 Composer 本来就这么做），而 help 里“Windows 需开发者模式/管理员”也是错的：Windows 走 junction，普通权限即可。夹具实测：顶层 `symlink:false` → 日志仍 `Junctioning from`；`options.symlink:false` → `Mirroring from` 且 vendor 是真目录副本。`isIdenticalPathRepo` 因此只承认 `options.symlink`，老宿主里那种顶层条目下次运行会被改写成生效的形式（`stalePathRepoReason` 会打印一行说明）。
 - **同名同版本的候选，Composer 取先注册的那条**（夹具 `%TEMP%/xq_order_probe` 实测：两个 path 源给同一个 `dev-main bfa1c01`，谁在 `repositories` 数组里靠前谁就拿到 `Junctioning from`）。宿主的 composer 镜像源常在数组前面、且同样提供 `dev-<分支>`（本地包已推送过，连 reference 都一样），path 条目**追加在末尾就永远输掉这个平局**——2026-11-01 crm 的 `composer require "…:dev-main as 1.0.x-dev"` 明明解析到 `dev-main f1d6c68` 却打印 `Extracting archive`（而非 `Junctioning from`）、vendor 是远端副本，就是这个原因。所以 `registerPathRepository` 改为把本次条目排在最前。抢同一个包的旧 path 条目也会被改写：`stalePathRepoReason` 除了“同一 url”，还会读每个 path 目录里的 `composer.json` 的 `name`，与本次包名同名的旧条目（比如包搬过目录、或历史上指向别处）一并换成新 url 并打印一行说明。重复运行时条目内容完全相同则不打印改动。

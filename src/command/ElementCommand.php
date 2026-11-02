@@ -17,87 +17,49 @@ class ElementCommand extends BaseCommand
         $this->setName('xqkeji:element')
             ->setDescription('创建、修改或删除表单/表格元素')
             ->addArgument('name', InputArgument::OPTIONAL, '元素名称')
-            ->addOption('create', 'c', InputOption::VALUE_NONE, '创建元素')
-            ->addOption('edit', 'e', InputOption::VALUE_NONE, '修改元素')
-            ->addOption('remove', 'r', InputOption::VALUE_NONE, '删除元素')
-            ->addOption('type', 'y', InputOption::VALUE_OPTIONAL, '指定元素类型（与 -c/-e 配合），不带值则弹出选择列表')
-            ->addOption('list', 'l', InputOption::VALUE_OPTIONAL, '项目列表（Select/Check/Radio），格式：值1|文本1,值2|文本2')
+            ->addOption('create', 'c', InputOption::VALUE_NONE, '创建元素（不传 -c/-e/-r 时默认就是创建）')
+            ->addOption('edit', 'e', InputOption::VALUE_NONE, '修改已存在的元素')
+            ->addOption('remove', 'r', InputOption::VALUE_NONE, '删除元素（会要求确认）')
+            ->addOption('type', 'y', InputOption::VALUE_OPTIONAL, '元素类型：-y=Text 直接指定；只给 -y 不带值则弹选择列表')
+            ->addOption('list', 'l', InputOption::VALUE_OPTIONAL, '项目列表（Select/Check/Radio）：值|文本,值|文本（也支持 值=文本）')
             ->addOption('default', 'D', InputOption::VALUE_OPTIONAL, '默认值')
-            ->addOption('model', 'm', InputOption::VALUE_OPTIONAL, '模型名（Select/Check/Radio），从模型动态加载项目列表')
-            ->addOption('filters', 'f', InputOption::VALUE_OPTIONAL, '过滤器（仅表单元素，写入 protected $filters）：多个用逗号分隔，带参数用 名称=>参数1|参数2，如 string / trim,upper / replace=> |-；不带值则交互输入（默认 string）；可选类型：absint,alnum,alpha,bool,email,float,int,lower,lowerFirst,regex,remove,replace,special,specialFull,string,striptags,trim,upper,upperFirst,upperWords,url,html')
-            ->addOption('vt', 't', InputOption::VALUE_OPTIONAL, '验证规则（仅表单元素，写入 protected $vt）：多条用分号分隔，规则参数用冒号分隔，如 required / required;length:3,20 / $confirm；不带值则交互输入（留空不设置）')
+            ->addOption('model', 'm', InputOption::VALUE_OPTIONAL, '模型名（Select/Check/Radio）：项目列表由模型动态加载')
+            ->addOption('filters', 'f', InputOption::VALUE_OPTIONAL, '过滤器（仅表单元素，写 protected $filters）：逗号分隔，带参数用 名称=>参数；不带值则交互输入')
+            ->addOption('vt', 't', InputOption::VALUE_OPTIONAL, '验证规则（仅表单元素，写 protected $vt）：多条用分号、参数用冒号分隔；不带值则交互输入')
             ->setHelp(<<<'EOF'
-创建、修改或删除表单/表格元素（根据当前模式决定）
+创建、修改或删除单个元素（按当前模式落到 form/element/ 或 table/element/）
 
 <info>用法示例：</info>
 
-  <comment># 创建元素（默认操作，使用默认类型）</comment>
-  composer xqkeji:element Username
-
-  <comment># 创建元素（指定类型）</comment>
+  <comment># 元素目录由当前模式决定，先切模式（-f 表单 / -t 表格）</comment>
+  composer xqkeji:use -f
   composer xqkeji:element Username -c -y=Text
-  composer xqkeji:element Username -c -y Text
+  composer xqkeji:element Username -c -y          <comment># 只给 -y 不带值 = 弹出类型选择列表</comment>
 
-  <comment># 创建元素（-y 不带值，弹出类型选择列表）</comment>
-  composer xqkeji:element Username -c -y
-
-  <comment># 创建 Select 元素（带项目列表和默认值，| 分隔符）</comment>
+  <comment># 选项类元素：-l 项目列表（值|文本 或 值=文本，逗号分隔）、-D 默认值、-m 改由模型动态加载</comment>
   composer xqkeji:element Status -c -y=Select -l "1|启用,0|禁用" -D=1
-
-  <comment># 创建 Select 元素（= 分隔符）</comment>
-  composer xqkeji:element Status -c -y=Select -l "1=启用,0=禁用" -D=1
-
-  <comment># 创建 Check 元素（带项目列表）</comment>
-  composer xqkeji:element Roles -c -y=Check -l "1|管理员,2|编辑,3|用户"
-
-  <comment># 创建 Radio 元素（带项目列表和默认值）</comment>
-  composer xqkeji:element Gender -c -y=Radio -l "1|男,2|女" -D=1
-
-  <comment># 创建 Select 元素（从模型动态加载项目列表）</comment>
+  composer xqkeji:element Roles -c -y=Check -l "1|管理员,2|编辑"
   composer xqkeji:element Status -c -y=Select -m=category_type
 
-  <comment># 创建元素并设置过滤器与验证规则（仅表单元素）</comment>
-  composer xqkeji:element Age -c -y=Number -f=int -t=required
+  <comment># 过滤器与验证规则（只写 protected $filters / $vt，仅表单元素）</comment>
   composer xqkeji:element Nickname -c -f "trim,upper" -t "required;length:3,20"
-  <comment># replace 带两个参数（参数间用 | 分隔，这里表示把空格替换为 -）</comment>
-  composer xqkeji:element Intro -c -f "striptags,trim,replace=> |-" -t required
+  composer xqkeji:element Intro -c -f "striptags,trim,replace=> |-"   <comment># 带参数的过滤器用 名称=>参数</comment>
 
-  <comment># 只传 -f / -t 不带值：交互输入（过滤器默认 string，验证规则留空即不设置）</comment>
-  composer xqkeji:element Email -c -y=Email -f -t
-
-  <comment># 表格模式下创建 select_ 前缀元素（免选类型、不询问中文名，生成继承 ListSelectModel 的空子类）</comment>
+  <comment># 表格模式下的 select_ 前缀：免选类型、不询问中文名，生成继承 ListSelectModel 的空子类</comment>
   composer xqkeji:use -t
   composer xqkeji:element select_dept -c
 
-  <comment># 修改元素（指定类型）</comment>
+  <comment># 修改与删除</comment>
   composer xqkeji:element Username -e -y=Select
-
-  <comment># 修改元素（-y 不带值，弹出类型选择列表）</comment>
-  composer xqkeji:element Username -e -y
-
-  <comment># 删除元素</comment>
   composer xqkeji:element Username -r
 
-<info>说明：</info>
+<info>要点：</info>
 
-  - 元素名称支持大小写，自动转为大驼峰（如 username → Username、user_name → UserName）
-  - 表单元素创建在当前模块的 form/element/ 目录下
-  - 表格元素创建在当前模块的 table/element/ 目录下
-  - 创建/修改前需要先使用 xqkeji:use -f（表单模式）或 -t（表格模式）设置当前模式
-  - 不指定 -c/-e/-r 时，默认为创建操作
-  - 使用 -y 不带值会强制弹出类型选择列表（交互模式）
-  - 使用 -y=类型名 直接指定类型
-  - 使用 -l 指定项目列表（Select/Check/Radio 类型），格式：值1|文本1,值2|文本2 或 值1=文本1,值2=文本2
-  - 使用 -D 指定默认值
-  - 使用 -m 指定模型名（Select/Check/Radio），从模型动态加载项目列表（需交互设置字段名）
-  - Select 类型自动使用 class => 'form-select'
-  - Check/Radio 类型自动使用 template => '@check'
-  - 使用 -f/--filters 设置过滤器（仅表单元素）：写入 protected $filters = [...];，多个用逗号分隔（如 trim,upper），带参数的过滤器用 名称=>参数1|参数2（如 replace=> |-、regex=>/^a$/、remove=>ab）；可选值：absint、alnum、alpha、bool、email、float、int、lower、lowerFirst、regex、remove、replace、special、specialFull、string、striptags、trim、upper、upperFirst、upperWords、url、html；只传 -f 不带值时交互输入（直接回车默认 string）
-  - 使用 -t/--vt 设置验证规则（仅表单元素）：写入 protected $vt = [[...], ...];，多条规则用分号分隔，规则参数用冒号分隔（如 required;length:3,20 → [ ['required'], ['length', '3,20'] ]）；前端规则可带 $ 前缀（如 $confirm）；只传 -t 不带值时交互输入，留空则不写该属性
-  - -f / -t 未传时生成的元素类不含 $filters / $vt 属性（保持原有行为）；表格模式（xqkeji:use -t）下传 -f/-t 会提示并忽略；表格 select_ 前缀与 ListSelectModel 仍生成空子类，不写这两个属性
-  - 表格元素类型列表含 ListSelectModel：显式 -y=ListSelectModel 时生成继承 xqkeji\form\element\ListSelectModel 的空子类（无 $name/$text/$attrs 属性、不询问中文名）
-  - 表格模式下的 select_ 前缀约定：元素名转蛇形后以 select_ 开头（如 select_dept / SelectDept）时免选类型、不询问中文名，直接生成继承 ListSelectModel 的空子类；-e 修改时同样覆盖重写为空子类
-  - 删除操作会要求确认
+  - 元素名自动转大驼峰（user_name → UserName）；不传 -c/-e/-r 时默认执行创建
+  - 名称转蛇形后以 select_ 开头即走 select 约定：表单侧 SelectModel、表格侧 ListSelectModel 的空子类
+  - Select 自动 class => 'form-select'；Check/Radio 自动 template => '@check'
+  - -f/-t 在表格模式会提示并忽略；未传时类体不写这两个属性（select_/ListSelectModel 空子类也不写）
+  - 可选的过滤器类型全表与 $vt 的展开格式见仓库 AGENTS.md
 
 EOF
             );

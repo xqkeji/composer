@@ -207,7 +207,7 @@ class FootEmail extends BaseListFoot
 - `xqkeji:table {表} --foot=add,b_delete,export`（建表时）/ `xqkeji:table {表} --foot=export`（**已存在**表格）；`--foot` 不带值 = 交互循环录入动作名，`--no-interaction` 下必须给列表。
 - 产物：本模块 `table/element/Foot{Class}.php`（只声明 `$buttons`，需要时才带 `$checkAll = [];` / `$pager = [];`）；表格类 `$foot` 改写为 `'~Foot{Class}'`（无 `$foot` 属性时在 `$el` 前补写）。此后这张表加/减按钮只动这一个文件。
 - `$buttons` 条目两种写法：动作在 base 已有按钮元素时**直接引用**（`Table::FOOT_BASE_BUTTONS`：`add→@AddButton`、`b_delete→@BDeleteButton`、`export→@ExportButton`）；其余（`b_open`/`b_close`/`b_order`/自定义动作）**内联** `['$Button','name'=>动作,'attrs'=>['value'=>文案,'class'=>'btn btn-X me-1 行为类']]`。`--foot` 的条目两种写法都收：既可写动作名，也可直接写 base 按钮元素名（`AddButton`/`BDeleteButton`/`ExportButton`，大小写不敏感、可带 `@`，等价于对应动作）。base 的 `EditButton`/`ViewButton`/`DeleteButton` 是操作列的 `btn-sm` 小按钮（`~EditDelete` 用），写进 `--foot` 会被拒绝（`Table::FOOT_COLUMN_BUTTONS`）。
-- **`name` 就是控制器动作**——`xq-com-admin-page` 的 `xq-batch` 会把选中行 POST 到 `…/{controller}/{name}`（`xq-url` 可覆盖），所以生成器同时把动作并入 `config/acl.php` 并补 `zh_cn.php` 的 title/success/failed/auth（`Controller::mergeControllerActions`：读原动作列表取并集写回，不覆盖已有；`Lang::set` 只在键缺失时赋值）。
+- **`name` 就是控制器动作**——`xq-res-admin-page` 的 `xq-batch` 会把选中行 POST 到 `…/{controller}/{name}`（`xq-url` 可覆盖），所以生成器同时把动作并入 `config/acl.php` 并补 `zh_cn.php` 的 title/success/failed/auth（`Controller::mergeControllerActions`：读原动作列表取并集写回，不覆盖已有；`Lang::set` 只在键缺失时赋值）。
 - 内置词表 `Table::FOOT_BUTTONS`：`add 添加(primary/xq-add)`、`b_delete 删除(danger/xq-batch)`、`b_open 启用(success/xq-batch)`、`b_close 禁用(secondary/xq-batch)`、`b_order 排序(info/xq-batch)`、`export 导出(warning/xq-export)`。未收录的动作名会问【按钮文案】与【前端行为类】（`FOOT_BEHAVIORS`：`xq-batch/xq-add/xq-edit/xq-view/xq-delete/xq-copy/xq-export/空`），非交互默认 `动作名 + xq-batch`。动作名统一小写、`-` 归一为 `_`（与 `xqkeji:action` 一致）。
 - `--no-check-all` / `--no-pager`（须与 `--foot` 同用）关掉全选框 / 分页条：新建的 foot 类直接写上 `$checkAll = [];` / `$pager = [];`；已有 foot 文件则由 `applyFootFlags` 补写、或把已有的非空声明改写为 `[]`（会打印原值），已是 `[]` 则不动。
 - 已存在表格的追加是**文本插入**（`insertFootButtons`）：定位 `protected $buttons = [`，按括号深度（跳过引号内容）找到配对 `]` 与末条目，把缺失条目插在其后（缩进沿用已有条目；空数组会展开成多行）；同动作条目（`'@AddButton'` 反查或内联 `'name' => '动作'`）已存在则跳过，文件其余内容与手工编辑（含 tooltip 里的 `<br/>`、方括号）原样保留。
@@ -220,14 +220,14 @@ class FootEmail extends BaseListFoot
 
 - 优先级：**`-i/--icon` 显式指定** > **中文名关键词**（`-t` 传入的标题，取命中的**最长**关键词，故「管理员」不会被「用户」抢先）> **控制器蛇形词根**（`user_login` → `user`，按词根出现顺序，先命中先用）> **`crc32(控制器名) % 兜底池`**（约 24 个中性图标；未命中关键词时也不再千篇一律，且同名恒同图标、可复现）。表与池都不可用才回退 `bi bi-list`。
 - 关键词表在 `MenuIcon::ICONS`（`图标 => [中文词…, 英文词根…]`），扁平表由 `keywordMap()` 惰性构建；覆盖用户/部门/权限/订单/商品/库存/财务/统计/日志/消息/文件/图片/课程/成绩/班级/物流/审批… 约 60 个业务域。
-- **表内图标名必须真实存在**：宿主 `vendor/xqkeji/xq-com-bootstrap-icons/src/font/bootstrap-icons.css` 共 1996 个 `.bi-*`，加新条目后按文件名逐个核对（如 `list-check`/`people`/`currency-dollar`/`ui-checks`/`box-seam` 存在，`ui-toggles`/`bankcoin`/`note-text` **不存在**）。
+- **表内图标名必须真实存在**：宿主 `vendor/xqkeji/xq-res-bootstrap-icons/src/font/bootstrap-icons.css` 共 1996 个 `.bi-*`，加新条目后按文件名逐个核对（如 `list-check`/`people`/`currency-dollar`/`ui-checks`/`box-seam` 存在，`ui-toggles`/`bankcoin`/`note-text` **不存在**）。
 - `-i` 三种写法等价并自动补全：`person` / `bi-person` / `bi bi-person` 都归一为 `bi bi-person`（`MenuIcon::normalize`）。
 - 图标推荐只在**确认要新增菜单项之后**执行并打印 `↻ 菜单图标: …（来源）`：`hasMenuUrl()` 命中已存在的 url 会先 return，所以你手工改过的图标永远不会被覆盖。
 - 建表格同样生效：`xqkeji:table` 也有 `-i/--icon`（`TableCommand` → `createTable` 末位可选 `string $menuIcon` → `ensureNormalController`/`ensureTreeController` 末位同名参数 → `Controller::initControllerConfig` 第 7 参 `$icon`）。标题关键词取**建表时询问得到的表格中文名**（table 命令没有 `-t/--title`，别按 `-t` 写脚本）；`-N` 不写菜单，`-i` 自然无意义。
 
 ## `xqkeji:path` 的版本别名（默认落在宿主，不动本地包）
 
-path 仓库里**没有 `version` 字段**的本地包，Composer 用 `VersionGuesser` 按当前分支报出 `dev-<分支>`（`.git` 都没有时固定回退 `dev-main`；有 `.git` 但读不到分支=游离 HEAD/worktree 时报的是最近 tag）。这个 `dev-*` 版本不满足其它包对该包的 `^x` 稳定约束（例如所有 `xq-com-*` 与 `xq-app-admin` 都要求 `xqkeji/composer: ^1.0`），而 path 仓库是 canonical、不会回退到 packagist，于是解析直接失败。`src/command/PathCommand.php` 的三种处理：
+path 仓库里**没有 `version` 字段**的本地包，Composer 用 `VersionGuesser` 按当前分支报出 `dev-<分支>`（`.git` 都没有时固定回退 `dev-main`；有 `.git` 但读不到分支=游离 HEAD/worktree 时报的是最近 tag）。这个 `dev-*` 版本不满足其它包对该包的 `^x` 稳定约束（例如所有 `xq-res-*` 与 `xq-app-admin` 都要求 `xqkeji/composer: ^1.0`），而 path 仓库是 canonical、不会回退到 packagist，于是解析直接失败。`src/command/PathCommand.php` 的三种处理：
 
 - **默认（`inlineAliasConstraint`）**：把别名写在**宿主项目自己的** `require` 里 —— `"包名": "dev-<分支> as <系列>.x-dev"`，本地包文件零改动。Composer 2.1+ 会把宿主根的内联别名作为一个等价版本加入解析池（`DependencyResolver/Pool` 由 `rootAliases` 生成 `AliasPackage`），因此其它包传递依赖的 `^x` 也能命中。
 - **`--local-alias`（`ensureBranchAlias`，1.1.43 起的旧默认）**：把 `<系列>.x-dev` 写进**本地包** `composer.json` 的 `extra.branch-alias.dev-<分支>`，宿主 `require` 保持 `*`；换任何宿主都自动生效，代价是改动本地包文件（整份 `composer.json` 会按 `JSON_PRETTY_PRINT` 重排）。

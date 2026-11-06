@@ -70,7 +70,11 @@ class Plugin implements PluginInterface, EventSubscriberInterface, Capable
     public function command(CommandEvent $event){
         self::$name=$event->getName();
         self::$commandName=$event->getCommandName();
-        self::$packages=$event->getInput()->getArgument('packages');
+        // 只有 xqkeji:* 命令定义了 packages 参数，dump-autoload/show 等内置命令取值会直接报错
+        if($event->getInput()->hasArgument('packages'))
+        {
+            self::$packages=$event->getInput()->getArgument('packages');
+        }
     }
     public static function executePackage(PackageEvent $event){
         $eventName=$event->getName();

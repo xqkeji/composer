@@ -6,7 +6,7 @@ namespace xqkeji\composer;
  *
  * 纯离线关键词表：中文按菜单标题子串匹配，英文按控制器蛇形词根精确匹配，
  * 都没命中时按控制器名做确定性哈希从兜底池取值（同名恒同图标，但不同控制器不会全一样）。
- * 表内图标名均已对 vendor/xqkeji/xq-com-bootstrap-icons 的 bootstrap-icons.css 校验存在。
+ * 表内图标名均已对 vendor/xqkeji/xq-res-bootstrap-icons 的 bootstrap-icons.css 校验存在。
  */
 class MenuIcon
 {

@@ -24,7 +24,7 @@ class Table
     /**
      * 表格底部操作栏（\$foot）按钮词表：动作名 => [默认文案, Bootstrap 颜色, 前端行为类]
      *
-     * 前端行为类由 xq-com-admin-page 的 JS 约定驱动（xq-add 打开添加、xq-export 导出、
+     * 前端行为类由 xq-res-admin-page 的 JS 约定驱动（xq-add 打开添加、xq-export 导出、
      * xq-batch 把选中行 POST 到 name 对应的动作地址 …/{controller}/{name}），
      * 按钮的 'name' 即控制器动作名，故同时需要写入 acl.php 与 zh_cn.php。
      */

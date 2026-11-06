@@ -180,7 +180,7 @@ class Module implements EventSubscriberInterface
         $moduleName = $package;
         if (strpos($package, 'xq-app-') === 0) {
             $moduleName = substr($package, 7);
-        } elseif (strpos($package, 'xq-com-') === 0) {
+        } elseif (strpos($package, 'xq-com-') === 0 || strpos($package, 'xq-res-') === 0) {
             $moduleName = substr($package, 7);
         }
 
@@ -523,7 +523,7 @@ class Module implements EventSubscriberInterface
                 $package = $parts[1];
                 if (strpos($package, 'xq-app-') === 0) {
                     $moduleName = substr($package, 7);
-                } elseif (strpos($package, 'xq-com-') === 0) {
+                } elseif (strpos($package, 'xq-com-') === 0 || strpos($package, 'xq-res-') === 0) {
                     $moduleName = substr($package, 7);
                 } else {
                     $moduleName = $package;

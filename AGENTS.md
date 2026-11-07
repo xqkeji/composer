@@ -56,6 +56,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 
 表单/表格类里最核心的字段：`$name`（蛇形配置名）、`$el`（元素/列引用数组）、表格另有 `$foot`（操作栏）与可选 `$isDrag`（拖拽排序）。
 
+**模块骨架目录**由 `xqkeji:module` 整棵复制 `src/example/src/`（`Module::copyDirectory` 用 `RecursiveDirectoryIterator` + `SELF_FIRST`，空目录也会 `mkdir`，文件里的 `{MODULE_NAME}`/`{MODULE_CLASS}` 占位符自动替换）：`config/`、`controller/`、`event/`、`form/{element,template,validator}/`、`lang/`、`model/`、`table/{element,template}/`、`view/`。其中 **`form/validator/` 留给用户放自定义验证器**——生成命令不往这里写任何东西，也没有对应的子命令；包的 PSR-4 是 `xqkeji\app\{模块}\ => src/`（`src/example/composer.json`），所以放在这里的类命名空间即 `xqkeji\app\{模块}\form\validator\`。空目录靠一个 14 字节的 `.gitkeep` 占位（内容为 `*` + `!.gitignore`），复制时会一并带进新模块。
+
 ## 命令速查（一句话；精确参数见 docs/commands.json）
 
 - `xqkeji:module {name} [-p 路径] [-t 中文名]` — 创建/注册模块。
@@ -107,7 +109,7 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - **`-y` 不带值 = 强制弹出类型选择列表**；`-y=类型名` 直接指定。
 - **选项类元素（Select/Check/Radio）**：`-l` 项目列表，格式 `值1|文本1,值2|文本2`，**也支持 `值=文本` 分隔符**；`-D` 默认值；`-m` 指定模型名（项目列表由模型动态加载，**需交互设置字段名**）。Select 自动 `class => 'form-select'`；Check/Radio 自动 `template => '@check'`。
 - **`-f/--filters`（仅表单元素）** 写入 `protected $filters = [...]`：多个用逗号分隔（`trim,upper`），**带参数的过滤器用 `名称=>参数1|参数2`**（`replace=> |-`、`regex=>/^a$/`、`remove=>ab`）。完整可选值（24 项）：`absint`、`alnum`、`alpha`、`bool`、`email`、`float`、`int`、`lower`、`lowerFirst`、`regex`、`remove`、`replace`、`special`、`specialFull`、`string`、`striptags`、`trim`、`upper`、`upperFirst`、`upperWords`、`url`、`html`。只传 `-f` 不带值时交互输入，**直接回车默认 `string`**。
-- **`-t/--vt`（仅表单元素）** 写入 `protected $vt = [[...], ...]`：**多条规则用分号分隔，规则参数用冒号分隔** —— `required;length:3,20` → `[ ['required'], ['length', '3,20'] ]`；前端规则可带 `$` 前缀（如 `$confirm`）。只传 `-t` 不带值时交互输入，**留空则不写该属性**。
+- **`-t/--vt`（仅表单元素）** 写入 `protected $vt = [...]`，规则名**一律带 `$` 前缀**（命令行可省略，生成器自动补）：无选项的规则写成字符串 `'$required'`，带选项的规则写成 `'$规则名' => ['名称' => 值, ...]`（与 `$filters` 同形）。命令行格式：多条用分号、选项段用冒号、多个选项用竖线且写成 `名称=值` —— `required;email` → `[ '$required', '$email' ]`；`between:min=5|max=10` → `[ '$between' => ['min' => 5, 'max' => 10] ]`。**纯数字值按数字写入，其余按字符串**（与 admin 动作的 `$conditions` 一致）。旧的 `[['required']]` 子数组写法已废弃；冒号后不是 `名称=值` 的位置参数（如 `length:3,20`）直接报错。选项值里含 `|`（如正则的交替）会被命令行切开，这类规则请在元素类里手写。只传 `-t` 不带值时交互输入，**留空则不写该属性**。
 - `-f`/`-t` 未传时生成的元素类**不含**这两个属性（保持原有行为）；**表格模式（`xqkeji:use -t`）下传 `-f`/`-t` 会提示并忽略**；表格侧 `select_` 前缀与显式 `-y=ListSelectModel` 生成继承 `xqkeji\form\element\ListSelectModel` 的空子类（无 `$name`/`$text`/`$attrs`、不询问中文名），**也不写这两个属性**；表格模式下 `-e` 修改 `select_` 元素同样覆盖重写为空子类。
 
 ## `xqkeji:action` 预定义动作全表与 `admin` 的 `$order`/`$conditions`

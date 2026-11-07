@@ -703,8 +703,8 @@ class Element
 
     /**
      * 解析验证规则（$vt）
-     * @param string|null $vt null=不设置，''=交互输入，string=形如 required;length:3,20 的规则列表
-     * @return array|null 每条规则为一个数组（首元素=规则名，其后=参数）
+     * @param string|null $vt null=不设置，''=交互输入，string=形如 required;between:min=5|max=10 的规则列表
+     * @return array|null 每条规则为 ['name' => 带 $ 前缀的规则名, 'options' => 选项键值（可为空）]
      */
     private function resolveVt(?string $vt): ?array
     {
@@ -717,7 +717,7 @@ class Element
                 return null;
             }
             $line = $this->io->ask(
-                "<question>请输入验证规则（多条用分号分隔，规则参数用冒号分隔，如 required;length:3,20；留空不设置验证）:</question> ",
+                "<question>请输入验证规则（多条用分号分隔，规则选项用冒号分隔、多个选项用竖线分隔且写成 名称=值，如 required 或 between:min=5|max=10；留空不设置验证）:</question> ",
                 ''
             );
             $vt = trim((string)$line);
@@ -740,20 +740,37 @@ class Element
                 $rule = $token;
                 $param = null;
             }
-            // 规则名允许前端规则 $ 前缀（如 $required、$confirm）
+            // 规则名统一带 $ 前缀，输入时前缀可省略
             if (!preg_match('/^\$?[A-Za-z_][A-Za-z0-9_]*$/', $rule)) {
-                $this->io->write("<error>无效的验证规则 '{$rule}'，规则名只能是字母、数字、下划线（前端规则可带 \$ 前缀）</error>");
+                $this->io->write("<error>无效的验证规则 '{$rule}'，规则名只能是字母、数字、下划线（\$ 前缀可省略）</error>");
                 return null;
             }
-            $item = [$rule];
+            $item = ['name' => '$' . ltrim($rule, '$'), 'options' => []];
             if ($param !== null && $param !== '') {
-                $item[] = $param;
+                foreach (explode('|', $param) as $p) {
+                    $p = trim($p);
+                    if ($p === '') {
+                        continue;
+                    }
+                    if (strpos($p, '=') === false) {
+                        $this->io->write("<error>验证规则 '\${$rule}' 的选项 '{$p}' 格式无效，需写成 名称=值，多个选项用竖线分隔，如 between:min=5|max=10</error>");
+                        return null;
+                    }
+                    list($key, $value) = explode('=', $p, 2);
+                    $key = trim($key);
+                    $value = trim($value);
+                    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
+                        $this->io->write("<error>验证选项名 '{$key}' 无效，只能是字母、数字、下划线</error>");
+                        return null;
+                    }
+                    $item['options'][$key] = $value;
+                }
             }
             $result[] = $item;
         }
 
         if (empty($result)) {
-            $this->io->write('<error>验证规则格式无效，请使用：required 或 required;length:3,20</error>');
+            $this->io->write('<error>验证规则格式无效，请使用：required 或 required;between:min=5|max=10</error>');
             return null;
         }
         return $result;
@@ -786,7 +803,7 @@ class Element
     }
 
     /**
-     * 构建 $vt 属性字符串
+     * 构建 $vt 属性字符串：无选项写成 '$required'，有选项写成 '$between' => ['min' => 5, 'max' => 10]
      */
     private function buildVtProperty(?array $vt): string
     {
@@ -794,16 +811,26 @@ class Element
             return '';
         }
 
-        $lines = [];
+        $parts = [];
         foreach ($vt as $rule) {
-            $tokens = [];
-            foreach ($rule as $token) {
-                $tokens[] = "'" . $this->escapeSingleQuoted((string)$token) . "'";
+            $name = "'" . $this->escapeSingleQuoted($rule['name']) . "'";
+            if (empty($rule['options'])) {
+                $parts[] = $name;
+                continue;
             }
-            $lines[] = '        [' . implode(', ', $tokens) . ']';
+            $optionParts = [];
+            foreach ($rule['options'] as $key => $value) {
+                $escapedKey = $this->escapeSingleQuoted((string)$key);
+                // 纯数字按数字写入，其余按字符串（与 admin 动作的 $conditions 一致）
+                $escapedValue = preg_match('/^-?\d+(\.\d+)?$/', (string)$value)
+                    ? (string)$value
+                    : "'" . $this->escapeSingleQuoted((string)$value) . "'";
+                $optionParts[] = "'{$escapedKey}' => {$escapedValue}";
+            }
+            $parts[] = $name . ' => [' . implode(', ', $optionParts) . ']';
         }
 
-        return "\n    protected \$vt = [\n" . implode(",\n", $lines) . ",\n    ];";
+        return "\n    protected \$vt = [" . implode(', ', $parts) . '];';
     }
 
     /**

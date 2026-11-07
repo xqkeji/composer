@@ -784,7 +784,7 @@ class Form
         $useText = 'xqkeji' . '\\' . 'form' . '\\' . 'element' . '\\' . 'Text';
         $template = $isSearch ? '@search' : '@row';
 
-        return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = [['required']];\n    protected \$template = '{$template}';\n}\n";
+        return "<?php\nnamespace {$namespace};\n\nuse {$useText};\n\nclass {$className} extends Text\n{\n    protected \$name = '{$configName}';\n    protected \$text = '{$elementText}';\n    protected \$attrs = [\n        'required' => 'true',\n        'class' => 'form-control',\n    ];\n    protected \$filters = ['string'];\n    protected \$vt = ['$required'];\n    protected \$template = '{$template}';\n}\n";
     }
 
     /**

@@ -25,7 +25,7 @@ class ElementCommand extends BaseCommand
             ->addOption('default', 'D', InputOption::VALUE_OPTIONAL, '默认值')
             ->addOption('model', 'm', InputOption::VALUE_OPTIONAL, '模型名（Select/Check/Radio）：项目列表由模型动态加载')
             ->addOption('filters', 'f', InputOption::VALUE_OPTIONAL, '过滤器（仅表单元素，写 protected $filters）：逗号分隔，带参数用 名称=>参数；不带值则交互输入')
-            ->addOption('vt', 't', InputOption::VALUE_OPTIONAL, '验证规则（仅表单元素，写 protected $vt）：多条用分号、选项用冒号且写成 名称=值（多个用竖线）；规则名自动补 $ 前缀；不带值则交互输入')
+            ->addOption('vt', 't', InputOption::VALUE_OPTIONAL, '验证规则（仅表单元素，写 protected $vt）：多条用分号、选项用冒号且写成 名称=值（多个用竖线，值可为数字/true/false）；规则名自动补 $ 前缀；不带值则交互输入')
             ->setHelp(<<<'EOF'
 创建、修改或删除单个元素（按当前模式落到 form/element/ 或 table/element/）
 
@@ -45,6 +45,7 @@ class ElementCommand extends BaseCommand
   composer xqkeji:element Nickname -c -f "trim,upper" -t "required;email"
   composer xqkeji:element Intro -c -f "striptags,trim,replace=> |-"   <comment># 带参数的过滤器用 名称=>参数</comment>
   composer xqkeji:element Age -c -t "between:min=1|max=99"   <comment># 带选项的验证规则用 规则:名称=值|名称=值</comment>
+  composer xqkeji:element Intro -c -t "min:min=10|mode=length|included=true"   <comment># $min/$max 默认比字符串长度，mode=number 比数值大小</comment>
 
   <comment># 表格模式下的 select_ 前缀：免选类型、不询问中文名，生成继承 ListSelectModel 的空子类</comment>
   composer xqkeji:use -t
@@ -60,7 +61,7 @@ class ElementCommand extends BaseCommand
   - 名称转蛇形后以 select_ 开头即走 select 约定：表单侧 SelectModel、表格侧 ListSelectModel 的空子类
   - Select 自动 class => 'form-select'；Check/Radio 自动 template => '@check'
   - -f/-t 在表格模式会提示并忽略；未传时类体不写这两个属性（select_/ListSelectModel 空子类也不写）
-  - 可选的过滤器类型全表与 $vt 的展开格式见仓库 AGENTS.md
+  - 可选的过滤器类型全表、$vt 的展开格式与 $min/$max 的选项含义见仓库 AGENTS.md
 
 EOF
             );

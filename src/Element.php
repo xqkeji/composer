@@ -49,7 +49,7 @@ class Element
      * @param string|null $defaultValue 默认值（null=无，''=交互输入，string=默认值）
      * @param string|null $modelName 模型名（null=无，''=交互输入，string=模型名）
      * @param string|null $filters 过滤器（null=不设置，''=交互输入，string=trim,upper,replace=> |-,  形式）
-     * @param string|null $vt 验证规则（null=不设置，''=交互输入，string=required;length:3,20 形式）
+     * @param string|null $vt 验证规则（null=不设置，''=交互输入，string=required;min:min=6 形式）
      */
     public function createElement(string $elementName, ?string $specifiedType = null, ?string $items = null, ?string $defaultValue = null, ?string $modelName = null, ?string $filters = null, ?string $vt = null): void
     {
@@ -717,7 +717,7 @@ class Element
                 return null;
             }
             $line = $this->io->ask(
-                "<question>请输入验证规则（多条用分号分隔，规则选项用冒号分隔、多个选项用竖线分隔且写成 名称=值，如 required 或 between:min=5|max=10；留空不设置验证）:</question> ",
+                "<question>请输入验证规则（多条用分号分隔，规则选项用冒号分隔、多个选项用竖线分隔且写成 名称=值，值可为数字/true/false/字符串，如 required 或 min:min=6|included=true；留空不设置验证）:</question> ",
                 ''
             );
             $vt = trim((string)$line);
@@ -821,16 +821,29 @@ class Element
             $optionParts = [];
             foreach ($rule['options'] as $key => $value) {
                 $escapedKey = $this->escapeSingleQuoted((string)$key);
-                // 纯数字按数字写入，其余按字符串（与 admin 动作的 $conditions 一致）
-                $escapedValue = preg_match('/^-?\d+(\.\d+)?$/', (string)$value)
-                    ? (string)$value
-                    : "'" . $this->escapeSingleQuoted((string)$value) . "'";
+                $escapedValue = $this->vtValueLiteral($value);
                 $optionParts[] = "'{$escapedKey}' => {$escapedValue}";
             }
             $parts[] = $name . ' => [' . implode(', ', $optionParts) . ']';
         }
 
         return "\n    protected \$vt = [" . implode(', ', $parts) . '];';
+    }
+
+    /**
+     * $vt 选项值的字面量：纯数字与 true/false/null 裸写，其余按字符串加引号
+     */
+    private function vtValueLiteral($value): string
+    {
+        $text = (string)$value;
+        if (preg_match('/^-?\d+(\.\d+)?$/', $text)) {
+            return $text;
+        }
+        $lower = strtolower($text);
+        if ($lower === 'true' || $lower === 'false' || $lower === 'null') {
+            return $lower;
+        }
+        return "'" . $this->escapeSingleQuoted($text) . "'";
     }
 
     /**

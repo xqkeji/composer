@@ -106,11 +106,11 @@ class Container
         $runtime_path=$root_path.DIRECTORY_SEPARATOR.'runtime';
         $session_path=$runtime_path.DIRECTORY_SEPARATOR.'session';
         $upload_path=$root_path.DIRECTORY_SEPARATOR.'www'.DIRECTORY_SEPARATOR.'upload';
-        $assets_path=$root_path.DIRECTORY_SEPARATOR.'www'.DIRECTORY_SEPARATOR.'asset';
-        Asset::createDir($assets_path,0777);
+        $asset_path=$root_path.DIRECTORY_SEPARATOR.'www'.DIRECTORY_SEPARATOR.'asset';
+        Asset::createDir($asset_path,0777);
         chmod($runtime_path,0777);
         chmod($session_path,0777);
         chmod($upload_path,0777);
-        chmod($assets_path,0777);
+        chmod($asset_path,0777);
     }
 }

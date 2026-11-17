@@ -19,6 +19,7 @@ class PathCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:path')
+            ->setAliases(['xq:path'])
             ->setDescription('将 composer 包注册为本地路径包（path 仓库 + symlink）')
             ->addArgument('package', InputArgument::REQUIRED, '包名（如 xqkeji/composer）')
             ->addArgument('path', InputArgument::REQUIRED, '本地路径（包根目录，需包含 composer.json）')
@@ -30,7 +31,7 @@ class PathCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 将 composer 包注册为本地路径包（path 仓库），改本地源码即时生效
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 默认建链接并自动安装/更新（相对路径与绝对路径均可）</comment>
   composer xqkeji:path xqkeji/composer F:/docker/code/php/composer

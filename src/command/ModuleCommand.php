@@ -15,6 +15,7 @@ class ModuleCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:module')
+            ->setAliases(['xq:module'])
             ->setDescription('创建模块')
             ->addArgument('name', InputArgument::OPTIONAL, '模块名称或包名 (如: home 或 xqkeji/xq-app-home)')
             ->addOption('path', 'p', InputOption::VALUE_REQUIRED, '本地路径（创建 composer 包模块时必须指定）')
@@ -22,7 +23,7 @@ class ModuleCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 创建新模块（本地 app/ 模块或 composer 包模块），建完自动设为当前模块
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 本地模块 → 当前项目的 app/{模块名}/</comment>
   composer xqkeji:module home

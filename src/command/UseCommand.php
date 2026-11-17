@@ -15,6 +15,7 @@ class UseCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:use')
+            ->setAliases(['xq:use'])
             ->setDescription('切换当前模块、控制器或模式')
             ->addArgument('name', InputArgument::OPTIONAL, '模块或控制器名称')
             ->addOption('module', 'm', InputOption::VALUE_NONE, '切换模块（默认）')
@@ -24,7 +25,7 @@ class UseCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 切换当前工作上下文（模块 / 控制器 / 模式），多数生成命令依赖它
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   composer xqkeji:use                 <comment># 不带参数 = 显示当前上下文</comment>
   composer xqkeji:use home            <comment># 切模块（-m 是默认，可省略）</comment>

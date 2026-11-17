@@ -15,6 +15,7 @@ class ControllerCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:controller')
+            ->setAliases(['xq:controller'])
             ->setDescription('创建控制器')
             ->addArgument('name', InputArgument::OPTIONAL, '控制器名称')
             ->addOption('entry', 'e', InputOption::VALUE_REQUIRED, '权限入口（默认 admin）', 'admin')
@@ -26,7 +27,7 @@ class ControllerCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 创建控制器并初始化 acl.php / menu.php / zh_cn.php（默认虚拟控制器，不落地实体文件）
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># admin 入口 + 默认动作集；-t 中文名进菜单与语言文件</comment>
   composer xqkeji:controller term -t 学期

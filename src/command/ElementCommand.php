@@ -15,6 +15,7 @@ class ElementCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:element')
+            ->setAliases(['xq:element'])
             ->setDescription('创建、修改或删除表单/表格元素')
             ->addArgument('name', InputArgument::OPTIONAL, '元素名称')
             ->addOption('create', 'c', InputOption::VALUE_NONE, '创建元素（不传 -c/-e/-r 时默认就是创建）')
@@ -29,7 +30,7 @@ class ElementCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 创建、修改或删除单个元素（按当前模式落到 form/element/ 或 table/element/）
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 元素目录由当前模式决定，先切模式（-f 表单 / -t 表格）</comment>
   composer xqkeji:use -f
@@ -134,10 +135,14 @@ EOF
 
         $tokens = [];
         $foundCommand = false;
+        $commandNames = $this->commandTokenNames();
         foreach ($argv as $arg) {
             if (!$foundCommand) {
-                if (strpos($arg, 'xqkeji:element') !== false) {
-                    $foundCommand = true;
+                foreach ($commandNames as $commandName) {
+                    if (strpos($arg, $commandName) !== false) {
+                        $foundCommand = true;
+                        break;
+                    }
                 }
                 continue;
             }

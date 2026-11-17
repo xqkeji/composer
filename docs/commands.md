@@ -5,25 +5,26 @@
 
 ## 命令一览
 
-| 命令 | 说明 | 源文件 |
-| --- | --- | --- |
-| `xqkeji:module` | 创建模块 | src/command/ModuleCommand.php |
-| `xqkeji:controller` | 创建控制器 | src/command/ControllerCommand.php |
-| `xqkeji:use` | 切换当前模块、控制器或模式 | src/command/UseCommand.php |
-| `xqkeji:action` | 创建动作类 | src/command/ActionCommand.php |
-| `xqkeji:remove` | 删除 composer 模块 | src/command/RemoveCommand.php |
-| `xqkeji:model` | 创建模型类 | src/command/ModelCommand.php |
-| `xqkeji:form` | 创建表单类 | src/command/FormCommand.php |
-| `xqkeji:table` | 创建表格类 | src/command/TableCommand.php |
-| `xqkeji:element` | 创建、修改或删除表单/表格元素 | src/command/ElementCommand.php |
-| `xqkeji:path` | 将 composer 包注册为本地路径包（path 仓库 + symlink） | src/command/PathCommand.php |
-| `xqkeji:doc` | 导出全部 xqkeji:* 命令清单为 docs/commands.json 与 docs/commands.md（供 AI/文档快速读懂，改命令后重跑刷新） | src/command/DocCommand.php |
+| 命令 | 短别名 | 说明 | 源文件 |
+| --- | --- | --- | --- |
+| `xqkeji:module` | `xq:module` | 创建模块 | src/command/ModuleCommand.php |
+| `xqkeji:controller` | `xq:controller` | 创建控制器 | src/command/ControllerCommand.php |
+| `xqkeji:use` | `xq:use` | 切换当前模块、控制器或模式 | src/command/UseCommand.php |
+| `xqkeji:action` | `xq:action` | 创建动作类 | src/command/ActionCommand.php |
+| `xqkeji:remove` | `xq:remove` | 删除 composer 模块 | src/command/RemoveCommand.php |
+| `xqkeji:model` | `xq:model` | 创建模型类 | src/command/ModelCommand.php |
+| `xqkeji:form` | `xq:form` | 创建表单类 | src/command/FormCommand.php |
+| `xqkeji:table` | `xq:table` | 创建表格类 | src/command/TableCommand.php |
+| `xqkeji:element` | `xq:element` | 创建、修改或删除表单/表格元素 | src/command/ElementCommand.php |
+| `xqkeji:path` | `xq:path` | 将 composer 包注册为本地路径包（path 仓库 + symlink） | src/command/PathCommand.php |
+| `xqkeji:doc` | `xq:doc` | 导出全部 xqkeji:* 命令清单为 docs/commands.json 与 docs/commands.md（供 AI/文档快速读懂，改命令后重跑刷新） | src/command/DocCommand.php |
 
 ## xqkeji:module
 
 创建模块
 
 - 源文件：`src/command/ModuleCommand.php`
+- 短别名：`xq:module`
 
 ### 位置参数
 
@@ -43,7 +44,7 @@
 ```
 创建新模块（本地 app/ 模块或 composer 包模块），建完自动设为当前模块
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 本地模块 → 当前项目的 app/{模块名}/
   composer xqkeji:module home
@@ -66,6 +67,7 @@
 创建控制器
 
 - 源文件：`src/command/ControllerCommand.php`
+- 短别名：`xq:controller`
 
 ### 位置参数
 
@@ -89,7 +91,7 @@
 ```
 创建控制器并初始化 acl.php / menu.php / zh_cn.php（默认虚拟控制器，不落地实体文件）
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # admin 入口 + 默认动作集；-t 中文名进菜单与语言文件
   composer xqkeji:controller term -t 学期
@@ -119,6 +121,7 @@
 切换当前模块、控制器或模式
 
 - 源文件：`src/command/UseCommand.php`
+- 短别名：`xq:use`
 
 ### 位置参数
 
@@ -140,7 +143,7 @@
 ```
 切换当前工作上下文（模块 / 控制器 / 模式），多数生成命令依赖它
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   composer xqkeji:use                 # 不带参数 = 显示当前上下文
   composer xqkeji:use home            # 切模块（-m 是默认，可省略）
@@ -159,6 +162,7 @@
 创建动作类
 
 - 源文件：`src/command/ActionCommand.php`
+- 短别名：`xq:action`
 
 ### 位置参数
 
@@ -177,7 +181,7 @@
 ```
 创建控制器动作类（动作名与中文名写入语言文件，动作键并入 acl）
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 动作建在【当前控制器】下，先切模块与控制器
   composer xqkeji:use home
@@ -201,6 +205,7 @@
 删除 composer 模块
 
 - 源文件：`src/command/RemoveCommand.php`
+- 短别名：`xq:remove`
 
 ### 位置参数
 
@@ -220,7 +225,7 @@
 ```
 删除 composer 包模块（清掉它在宿主与本地留下的全部痕迹）
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   composer xqkeji:remove xqkeji/xq-app-home
   composer xqkeji:remove xqkeji/xq-app-home -p F:/docker/code/php   # 顺带删本地包源码目录（危险操作）
@@ -238,6 +243,7 @@
 创建模型类
 
 - 源文件：`src/command/ModelCommand.php`
+- 短别名：`xq:model`
 
 ### 位置参数
 
@@ -250,7 +256,7 @@
 ```
 创建模型类（当前模块的 model/{Class}.php，继承 xqkeji\mvc\model\Model）
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   composer xqkeji:use -- edu
   composer xqkeji:model user_type     # user_type / UserType 等价，自动转大驼峰
@@ -267,6 +273,7 @@
 创建表单类
 
 - 源文件：`src/command/FormCommand.php`
+- 短别名：`xq:form`
 
 ### 位置参数
 
@@ -290,7 +297,7 @@
 ```
 创建表单类（表单 + 元素），建完自动切到表单模式
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 表单建在【当前模块】的 form/ 下，先切模块
   composer xqkeji:use -- edu
@@ -326,6 +333,7 @@
 创建表格类
 
 - 源文件：`src/command/TableCommand.php`
+- 短别名：`xq:table`
 
 ### 位置参数
 
@@ -355,7 +363,7 @@
 ```
 创建表格类（表格 + 列元素），默认同时准备控制器配置与同名配套表单
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 表格建在【当前模块】的 table/ 下，先切模块
   composer xqkeji:use -- edu
@@ -395,6 +403,7 @@
 创建、修改或删除表单/表格元素
 
 - 源文件：`src/command/ElementCommand.php`
+- 短别名：`xq:element`
 
 ### 位置参数
 
@@ -421,7 +430,7 @@
 ```
 创建、修改或删除单个元素（按当前模式落到 form/element/ 或 table/element/）
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 元素目录由当前模式决定，先切模式（-f 表单 / -t 表格）
   composer xqkeji:use -f
@@ -461,6 +470,7 @@
 将 composer 包注册为本地路径包（path 仓库 + symlink）
 
 - 源文件：`src/command/PathCommand.php`
+- 短别名：`xq:path`
 
 ### 位置参数
 
@@ -484,7 +494,7 @@
 ```
 将 composer 包注册为本地路径包（path 仓库），改本地源码即时生效
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   # 默认建链接并自动安装/更新（相对路径与绝对路径均可）
   composer xqkeji:path xqkeji/composer F:/docker/code/php/composer
@@ -522,6 +532,7 @@
 导出全部 xqkeji:* 命令清单为 docs/commands.json 与 docs/commands.md（供 AI/文档快速读懂，改命令后重跑刷新）
 
 - 源文件：`src/command/DocCommand.php`
+- 短别名：`xq:doc`
 
 ### 选项
 
@@ -534,7 +545,7 @@
 ```
 反射导出全部 xqkeji:* 命令的定义为 docs/commands.json + docs/commands.md
 
-用法示例：
+用法示例（xqkeji:* 与 xq:* 等价）：
 
   composer xqkeji:doc                 # 输出到本插件仓库根的 docs/
   composer xqkeji:doc -o ../docs      # 指定输出目录

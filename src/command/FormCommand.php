@@ -16,6 +16,7 @@ class FormCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:form')
+            ->setAliases(['xq:form'])
             ->setDescription('创建表单类')
             ->addArgument('name', InputArgument::OPTIONAL, '表单名称')
             ->addOption('element', 'e', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '元素：可多次或逗号分隔（-e Username,Password）；只给 -e 不带值则交互循环逐个添加')
@@ -27,7 +28,7 @@ class FormCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 创建表单类（表单 + 元素），建完自动切到表单模式
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 表单建在【当前模块】的 form/ 下，先切模块</comment>
   composer xqkeji:use -- edu
@@ -146,10 +147,14 @@ EOF
         // 找到 xqkeji:form 后面的参数
         $tokens = [];
         $foundCommand = false;
+        $commandNames = $this->commandTokenNames();
         foreach ($argv as $arg) {
             if (!$foundCommand) {
-                if (strpos($arg, 'xqkeji:form') !== false) {
-                    $foundCommand = true;
+                foreach ($commandNames as $commandName) {
+                    if (strpos($arg, $commandName) !== false) {
+                        $foundCommand = true;
+                        break;
+                    }
                 }
                 continue;
             }

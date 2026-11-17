@@ -40,6 +40,15 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 - **`select_` 约定**：元素名转蛇形后以 `select_` 开头（`select_dept` 或 `SelectDept` 均可），自动创建**继承 `xqkeji\form\element\SelectModel` 的空子类**、不询问中文名，表单中以 `~SelectDept` 引用。表格侧对称：`xqkeji:table -e`/`-a`/`xqkeji:element`（表格模式）遇到 `select_` 列时免选类型、不询问中文名，生成**继承 `xqkeji\form\element\ListSelectModel` 的空子类**（无 `$name`/`$text`/`$attrs`，行为由基类提供），表格中以 `~SelectDept` 引用；表格元素类型列表也含 `ListSelectModel`（显式 `-y=ListSelectModel` 同样生成空子类）。
 - 短选项支持 `-x值` / `-x=值` / `--opt=值` 多种写法，由 `src/command/NormalizesShortOptions.php` 统一规范化；`Form/Table/Element` 的 `execute` 还会直接扫描 `$_SERVER['argv']` 做分组（如 form 的 `-b/-g` tab/全局分组、element 的 `-c/-e/-r` 动作），因此这些命令的参数解析不完全走 Symfony。
 
+### 命令短别名 `xq:`（与 `xqkeji:` 完全等价）
+
+- 11 个命令都在 `configure()` 里挂了 `->setAliases(['xq:xxx'])`（`src/command/*.php` 的 `setName` 下一行），走 Symfony 原生别名机制：`Application::find('xq:form')` 解析回 canonical 名，执行时 `$this->getName()` **仍返回 `xqkeji:form`**，所以按名字判断的逻辑一律不受调用写法影响。`CommandProvider` 的注册链路不用改（别名随命令实例走）。
+- **新增按 argv 定位命令 token 的代码时，匹配串必须是「canonical 名 + 全部别名」，不能只认 `$this->getName()`**：别名写法 `xq:form` 里**不包含** `xqkeji:form` 这个子串，只按 canonical 名匹配会永远匹配不上。统一用 `NormalizesShortOptions::commandTokenNames()`（`array_merge([getName()], getAliases())`，11 个命令都 use 这个 trait），两个扫描点是 `src/command/FormCommand.php:150`、`src/command/ElementCommand.php:138`。写成单一字面量或只认 canonical 名时，`xq:` 调用会让 `$foundCommand` 永远为假 → Tab/全局分组解析、element 的 `-c/-e/-r` 动作解析**静默降级**（不报错，只丢功能：实测 `tab=[]`、`global=[]`，而正确写法实测拿到完整分组），属于最难发现的那类 bug。
+- 两处不认命令名的扫描无需改：`TableCommand::hasBareFootOption()` 只匹配 `--foot` token，`NormalizesShortOptions` 从 `argv` 切片后只按选项定义展开。
+- 副作用（实测）：`composer list` 只在命令行尾多一个 `[xq:form]`，**不会**新增 `xq` 分组；但 `composer list xq` 这类按命名空间查询会多出一个可用命名空间 `xq`；`-h` / `help xq:form` 的 Usage 段多一行短别名（仍一屏可看完）。
+- 文档同步：`DocCommand::describe()` 反射 `getAliases()` 写进 `commands.json` 的 `aliases`，`commands.md` 的「命令一览」多「短别名」列、每命令详情多「短别名」行；**改别名后重跑一次 `xqkeji:doc`**，不要手工编辑 docs/。
+- 事件链路无关：`Plugin::command()` 记录的 `self::$name` / `$commandName` / `$packages` 全仓没有读取点，别名调用不破坏现有行为（`hasArgument('packages')` 那条针对内置命令的守卫照旧必要）。
+
 ## 生成的文件布局（在目标模块目录下）
 
 | 命令 | 主要产物 |
@@ -59,6 +68,8 @@ module（模块）  →  controller（控制器）  →  form / table（表单 /
 **模块骨架目录**由 `xqkeji:module` 整棵复制 `src/example/src/`（`Module::copyDirectory` 用 `RecursiveDirectoryIterator` + `SELF_FIRST`，空目录也会 `mkdir`，文件里的 `{MODULE_NAME}`/`{MODULE_CLASS}` 占位符自动替换）：`config/`、`controller/`、`event/`、`form/{element,template,validator}/`、`lang/`、`model/`、`table/{element,template}/`、`view/`。其中 **`form/validator/` 留给用户放自定义验证器**——生成命令不往这里写任何东西，也没有对应的子命令；包的 PSR-4 是 `xqkeji\app\{模块}\ => src/`（`src/example/composer.json`），所以放在这里的类命名空间即 `xqkeji\app\{模块}\form\validator\`。空目录靠一个 14 字节的 `.gitkeep` 占位（内容为 `*` + `!.gitignore`），复制时会一并带进新模块。
 
 ## 命令速查（一句话；精确参数见 docs/commands.json）
+
+以下 `xqkeji:*` 全部可简写为 `xq:*`（等价调用，规则见上节「命令短别名」）。
 
 - `xqkeji:module {name} [-p 路径] [-t 中文名]` — 创建/注册模块。
 - `xqkeji:controller {name} [-e 入口] [-a auth|login] [-A 动作列表] [-t 中文名] [-i 图标] [-f]` — 创建控制器 + 初始化 acl/menu/lang（菜单图标按名字自动推荐，见下节）。

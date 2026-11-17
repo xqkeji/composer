@@ -24,12 +24,13 @@ class DocCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:doc')
+            ->setAliases(['xq:doc'])
             ->setDescription('导出全部 xqkeji:* 命令清单为 docs/commands.json 与 docs/commands.md（供 AI/文档快速读懂，改命令后重跑刷新）')
             ->addOption('output-dir', 'o', InputOption::VALUE_OPTIONAL, '输出目录（默认为插件仓库根下的 docs/）')
             ->setHelp(<<<'EOF'
 反射导出全部 xqkeji:* 命令的定义为 docs/commands.json + docs/commands.md
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   composer xqkeji:doc                 <comment># 输出到本插件仓库根的 docs/</comment>
   composer xqkeji:doc -o ../docs      <comment># 指定输出目录</comment>
@@ -132,6 +133,7 @@ EOF
 
         return [
             'name'        => $cmd->getName(),
+            'aliases'     => $cmd->getAliases(),
             'description' => $cmd->getDescription(),
             'source'      => $this->relativeSource($cmd, $repoRoot),
             'arguments'   => $arguments,
@@ -173,11 +175,11 @@ EOF
         // 概览表
         $lines[] = '## 命令一览';
         $lines[] = '';
-        $lines[] = '| 命令 | 说明 | 源文件 |';
-        $lines[] = '| --- | --- | --- |';
+        $lines[] = '| 命令 | 短别名 | 说明 | 源文件 |';
+        $lines[] = '| --- | --- | --- | --- |';
         foreach ($data['commands'] as $c) {
             $desc = str_replace(['|', "\n"], ['\\|', ' '], (string) $c['description']);
-            $lines[] = '| `' . $c['name'] . '` | ' . $desc . ' | ' . ($c['source'] ?: '-') . ' |';
+            $lines[] = '| `' . $c['name'] . '` | ' . $this->aliasCell($c['aliases']) . ' | ' . $desc . ' | ' . ($c['source'] ?: '-') . ' |';
         }
         $lines[] = '';
 
@@ -188,6 +190,7 @@ EOF
             $lines[] = (string) $c['description'];
             $lines[] = '';
             $lines[] = '- 源文件：`' . ($c['source'] ?: '-') . '`';
+            $lines[] = '- 短别名：' . $this->aliasCell($c['aliases']);
             $lines[] = '';
 
             if (!empty($c['arguments'])) {
@@ -228,6 +231,21 @@ EOF
         }
 
         return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * 短别名单元格：多个别名用顿号分隔，无别名写占位符。
+     */
+    private function aliasCell(array $aliases): string
+    {
+        if (empty($aliases)) {
+            return '—';
+        }
+        $cells = [];
+        foreach ($aliases as $alias) {
+            $cells[] = '`' . str_replace('|', '\\|', (string) $alias) . '`';
+        }
+        return implode('、', $cells);
     }
 
     /**

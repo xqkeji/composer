@@ -16,6 +16,7 @@ class RemoveCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:remove')
+            ->setAliases(['xq:remove'])
             ->setDescription('删除 composer 模块')
             ->addArgument('name', InputArgument::REQUIRED, '模块名称或包名')
             ->addOption('path', 'p', InputOption::VALUE_REQUIRED, '本地包目录路径（删除后是否清理）')
@@ -23,7 +24,7 @@ class RemoveCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 删除 composer 包模块（清掉它在宿主与本地留下的全部痕迹）
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   composer xqkeji:remove xqkeji/xq-app-home
   composer xqkeji:remove xqkeji/xq-app-home -p F:/docker/code/php   <comment># 顺带删本地包源码目录（危险操作）</comment>

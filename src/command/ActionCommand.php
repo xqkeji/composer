@@ -29,13 +29,14 @@ class ActionCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:action')
+            ->setAliases(['xq:action'])
             ->setDescription('创建动作类')
             ->addArgument('name', InputArgument::REQUIRED, '动作名（统一小写，如 add、b_close、change_password）')
             ->addOption('title', 't', InputOption::VALUE_REQUIRED, '动作中文名称（写入语言文件，如：批量删除）')
             ->setHelp(<<<'EOF'
 创建控制器动作类（动作名与中文名写入语言文件，动作键并入 acl）
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 动作建在【当前控制器】下，先切模块与控制器</comment>
   composer xqkeji:use home

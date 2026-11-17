@@ -15,12 +15,13 @@ class ModelCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:model')
+            ->setAliases(['xq:model'])
             ->setDescription('创建模型类')
             ->addArgument('name', InputArgument::OPTIONAL, '模型名称')
             ->setHelp(<<<'EOF'
 创建模型类（当前模块的 model/{Class}.php，继承 xqkeji\mvc\model\Model）
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   composer xqkeji:use -- edu
   composer xqkeji:model user_type     <comment># user_type / UserType 等价，自动转大驼峰</comment>

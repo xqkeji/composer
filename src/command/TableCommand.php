@@ -16,6 +16,7 @@ class TableCommand extends BaseCommand
     protected function configure()
     {
         $this->setName('xqkeji:table')
+            ->setAliases(['xq:table'])
             ->setDescription('创建表格类')
             ->addArgument('name', InputArgument::OPTIONAL, '表格名称')
             ->addOption('element', 'e', InputOption::VALUE_OPTIONAL | InputOption::VALUE_IS_ARRAY, '列元素：可多次或逗号分隔（-e id,Username）；只给 -e 不带值则交互循环逐个添加')
@@ -33,7 +34,7 @@ class TableCommand extends BaseCommand
             ->setHelp(<<<'EOF'
 创建表格类（表格 + 列元素），默认同时准备控制器配置与同名配套表单
 
-<info>用法示例：</info>
+<info>用法示例（xqkeji:* 与 xq:* 等价）：</info>
 
   <comment># 表格建在【当前模块】的 table/ 下，先切模块</comment>
   composer xqkeji:use -- edu

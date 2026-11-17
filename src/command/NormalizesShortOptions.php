@@ -29,6 +29,16 @@ trait NormalizesShortOptions
     }
 
     /**
+     * argv 里代表「本命令」的 token 匹配串：canonical 名 + 全部短别名（xq:*）。
+     * 只用 getName() 匹配不到别名写法，因为 "xq:form" 里并不包含 "xqkeji:form" 这个子串。
+     */
+    protected function commandTokenNames(): array
+    {
+        $names = array_merge([(string) $this->getName()], (array) $this->getAliases());
+        return array_values(array_filter($names, fn ($n) => $n !== ''));
+    }
+
+    /**
      * 把 argv 中 "-x=值" / "--name=值" 形式的参数展开为两个 token
      */
     private function normalizeShortOptionValue(InputInterface $input): InputInterface

@@ -107,6 +107,18 @@ EOF
         $pkgInfo = json_decode((string) file_get_contents($pkgComposer), true) ?: [];
         $isPlugin = isset($pkgInfo['type']) && $pkgInfo['type'] === 'composer-plugin';
 
+        // 校验传入包名与本地包 composer.json 声明的 name 是否一致：path 仓库与 require 都以 $package 为键，
+        // 拼错（如少打一个 k）会注册一个解析不到、装不上的死引用，故在写入任何宿主配置前先拦下。
+        $declaredName = isset($pkgInfo['name']) && is_string($pkgInfo['name']) ? trim($pkgInfo['name']) : '';
+        if ($declaredName !== '' && strcasecmp($declaredName, $package) !== 0) {
+            $output->writeln("<error>包名不匹配：你输入的是 \"{$package}\"，但 {$absPath}/composer.json 声明为 \"{$declaredName}\"。</error>");
+            if (levenshtein(strtolower($declaredName), strtolower($package)) === 1) {
+                $output->writeln('<comment>两者仅差一个字符，疑似拼写笔误。</comment>');
+            }
+            $output->writeln("<info>请改用：composer xqkeji:path \"{$declaredName}\" {$rawPath}</info>");
+            return 1;
+        }
+
         // 版本别名策略：默认只在宿主 require 写内联别名（不动本地包）；--local-alias 改写进本地包；--no-alias 不做
         $requireConstraint = '*';
         if ($localAlias) {

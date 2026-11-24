@@ -633,14 +633,20 @@ EOF
 
         $branch = $this->detectBranch($absPath);
         if ($branch === null || $branch === '' || $branch === 'HEAD') {
-            if (file_exists($absPath . '/.git')) {
-                // 有 .git 却读不到分支（detached HEAD / linked worktree）：Composer 会改用最近 tag 的版本，
-                // 此时猜 dev-<分支> 反而会让根约束解析失败，所以不做别名，只提示
+            // 读不到分支时先分辨两种情况（判据是 git 能否工作，而非 .git 目录是否存在）：
+            //  ① 有效仓库但处于游离 HEAD / worktree → Composer 报最近 tag，猜 dev-<分支> 反会解析失败 → 跳过别名用 *；
+            //  ② 无 .git 或 .git 已损坏（git 命令失败）→ Composer 固定回退 dev-main → 必须按 dev-main 写别名，
+            //     否则 require 留 * 会让别的包的 ^x 约束命中不到（path 是 canonical 源，packagist 又高优先级被屏蔽）。
+            if ($this->gitRepoUsable($absPath)) {
                 $output->writeln('<comment>本地包处于游离 HEAD 或 worktree（读不到当前分支），跳过宿主内联别名，require 用 *；</comment>');
                 $output->writeln('<comment>若解析报“版本不满足约束”，请切到固定分支后再跑本命令，或自行在宿主 require 里写内联别名</comment>');
                 return '*';
             }
-            // 没有 git 仓库：Composer 猜不到版本，固定回退为 dev-main
+            if (file_exists($absPath . '/.git')) {
+                $output->writeln('<comment>本地包 .git 不可用（git 命令失败，疑已损坏），按 Composer 的 dev-main 回退写宿主内联别名；</comment>');
+                $output->writeln('<comment>建议另取一份完整的包仓库，否则该包无法在本目录正常提交/打标签</comment>');
+            }
+            // 无可用 git：Composer 猜不到版本，固定回退为 dev-main
             $branch = 'main';
         }
         $aliasKey = 'dev-' . $branch;
@@ -801,6 +807,24 @@ EOF
             return substr($head, strlen('ref: refs/heads/'));
         }
         return null;
+    }
+
+    /**
+     * 本地包目录是否是一个 git 能正常工作的仓库（含有效仓库的游离 HEAD / worktree，返回 true）。
+     * 用于把"有效仓库但读不到分支"（Composer 报最近 tag）与"无 .git 或 .git 已损坏"（Composer 回退 dev-main）分开。
+     * 判据取 rev-parse 的实际退出码而非 .git 目录是否存在：损坏的 .git 仍是目录，file_exists 会误判为可用。
+     */
+    private function gitRepoUsable(string $absPath): bool
+    {
+        try {
+            $io = $this->getIO();
+        } catch (\Throwable $e) {
+            $io = null;
+        }
+        $executor = new ProcessExecutor($io);
+        $out = '';
+        $code = $executor->execute('git -C ' . escapeshellarg($absPath) . ' rev-parse --is-inside-work-tree', $out);
+        return $code === 0 && trim($out) === 'true';
     }
 
     /**
